@@ -798,6 +798,211 @@ def update_yearly_trend(types_selected, tod_selected, clickData, reset_clicks):
     return fig_yearly_trend(df_all, types_selected, tod_selected, selected_neigh)
 
 
+# =============================
+# Added: Crime grouping (violent/theft/nonviolent) + point colors + left legend (no edits to existing code/comments above)
+# =============================
+
+GROUP_COLORS = {
+    "Violent": "#d62728",      # red
+    "Theft": "#ff7f0e",        # orange
+    "Nonviolent": "#1f77b4",   # blue
+}
+
+def crime_group_from_type(t: str) -> str:
+    # simple keyword-based grouping (adjust keywords if your TYPE names differ)
+    s = str(t).lower()
+
+    violent_kw = [
+        "assault", "robbery", "homicide", "sexual", "rape", "kidnap",
+        "weapon", "shoot", "stab", "violence", "murder"
+    ]
+    theft_kw = [
+        "theft", "break and enter", "b&e", "burglary",
+        "stolen", "shoplift", "larceny",
+        "vehicle theft", "theft of vehicle", "theft from vehicle"
+    ]
+
+    if any(k in s for k in violent_kw):
+        return "Violent"
+    if any(k in s for k in theft_kw):
+        return "Theft"
+    return "Nonviolent"
+
+
+# Add CRIME_GROUP column once (safe even if called multiple times)
+if "CRIME_GROUP" not in df_all.columns:
+    df_all["CRIME_GROUP"] = df_all["TYPE"].apply(crime_group_from_type).astype("string")
+
+
+# Override map function name so callbacks automatically use the updated behavior
+def fig_neighbourhood_map(
+    df_filt: pd.DataFrame,
+    geojson: dict,
+    featureidkey: str,
+    name_mapping: dict[str, str],
+    selected_neigh: str | None,
+):
+    map_center = {"lat": 49.2827, "lon": -123.1207}
+    map_zoom = 11
+
+    # ---- ZOOMED VIEW: show incident points + boundary ----
+    if selected_neigh and selected_neigh in name_mapping:
+        selected_geo = name_mapping[selected_neigh]
+        bounds = get_feature_bounds(geojson, featureidkey, selected_geo)
+        if bounds:
+            map_center, map_zoom = bounds
+
+        df_points = df_filt[df_filt["NEIGHBOURHOOD"] == selected_neigh].copy()
+
+        # Ensure numeric coords
+        df_points["X"] = pd.to_numeric(df_points["X"], errors="coerce")
+        df_points["Y"] = pd.to_numeric(df_points["Y"], errors="coerce")
+        df_points = df_points.dropna(subset=["X", "Y"])
+
+        # Convert UTM → lat/lon if needed
+        if not df_points.empty:
+            if df_points["X"].mean() > 1000:
+                transformer = Transformer.from_crs("EPSG:26910", "EPSG:4326", always_xy=True)
+                lons, lats = transformer.transform(df_points["X"].values, df_points["Y"].values)
+                df_points["lon"] = lons
+                df_points["lat"] = lats
+            else:
+                df_points["lon"] = df_points["X"]
+                df_points["lat"] = df_points["Y"]
+
+        # Create readable datetime
+        if not df_points.empty:
+            df_points["DATETIME_STR"] = (
+                df_points["YEAR"].astype(str) + "-" +
+                df_points["MONTH"].astype(str).str.zfill(2) + "-" +
+                df_points["DAY"].astype(str).str.zfill(2) + " " +
+                df_points["HOUR"].astype(str).str.zfill(2) + ":" +
+                df_points["MINUTE"].astype(str).str.zfill(2)
+            )
+
+        # Ensure CRIME_GROUP exists even for filtered dfs
+        if "CRIME_GROUP" not in df_points.columns:
+            df_points["CRIME_GROUP"] = df_points["TYPE"].apply(crime_group_from_type).astype("string")
+
+        # Base scatter figure (colored by group)
+        fig = px.scatter_mapbox(
+            df_points,
+            lat="lat",
+            lon="lon",
+            color="CRIME_GROUP",
+            color_discrete_map=GROUP_COLORS,
+            hover_name="TYPE",
+            hover_data={
+                "CRIME_GROUP": True,
+                "DATETIME_STR": True,
+                "HUNDRED_BLOCK": True,
+                "lat": False,
+                "lon": False,
+            } if not df_points.empty else None,
+            zoom=map_zoom,
+            center=map_center,
+            mapbox_style="open-street-map",
+            title=f"Incidents in {selected_neigh}",
+            height=420,
+        )
+
+        fig.update_traces(marker=dict(size=10, opacity=0.85))
+
+        # ---- Draw neighbourhood boundary using line trace ----
+        prop_key = featureidkey.split(".")[-1]
+        for ft in geojson.get("features", []):
+            if str(ft.get("properties", {}).get(prop_key)) == str(selected_geo):
+                geom = ft.get("geometry", {})
+                if geom["type"] == "Polygon":
+                    polygons = [geom["coordinates"]]
+                elif geom["type"] == "MultiPolygon":
+                    polygons = geom["coordinates"]
+                else:
+                    polygons = []
+
+                for poly in polygons:
+                    for ring in poly:
+                        lons = [pt[0] for pt in ring]
+                        lats = [pt[1] for pt in ring]
+
+                        fig.add_trace(go.Scattermapbox(
+                            lon=lons,
+                            lat=lats,
+                            mode="lines",
+                            line=dict(width=3, color="black"),
+                            hoverinfo="skip",
+                            showlegend=False,
+                        ))
+
+        fig.update_layout(margin=dict(l=10, r=10, t=50, b=10))
+        return fig
+
+    # ---- DEFAULT: choropleth heatmap ----
+    counts = (
+        df_filt.groupby("NEIGHBOURHOOD", as_index=False)
+        .size()
+        .rename(columns={"size": "incidents"})
+    )
+
+    counts["NEIGH_GEO"] = counts["NEIGHBOURHOOD"].map(name_mapping)
+    counts = counts.dropna(subset=["NEIGH_GEO"])
+
+    fig = px.choropleth_mapbox(
+        counts,
+        geojson=geojson,
+        locations="NEIGH_GEO",
+        featureidkey=featureidkey,
+        color="incidents",
+        mapbox_style="open-street-map",
+        zoom=map_zoom,
+        center=map_center,
+        opacity=0.55,
+        hover_name="NEIGH_GEO",
+        hover_data={"incidents": True},
+        title="Incidents by neighbourhood (click a polygon to zoom & see points)",
+        height=420,
+    )
+
+    fig.update_layout(margin=dict(l=10, r=10, t=50, b=10))
+    return fig
+
+
+# Add a small legend to the left panel (append without editing original layout code)
+try:
+    _flex = app.layout.children[1]
+    _left = _flex.children[0]  # Left controls div
+
+    legend = html.Div(
+        style={"marginTop": "10px", "padding": "8px", "border": "1px solid #eee", "borderRadius": "8px"},
+        children=[
+            html.Div("Crime groups (point colors)", style={"fontSize": "12px", "fontWeight": "bold", "marginBottom": "6px"}),
+            html.Div([
+                html.Span(style={"display": "inline-block", "width": "10px", "height": "10px",
+                                 "backgroundColor": GROUP_COLORS["Violent"], "marginRight": "8px",
+                                 "borderRadius": "50%"}),
+                html.Span("Violent", style={"fontSize": "12px"})
+            ]),
+            html.Div([
+                html.Span(style={"display": "inline-block", "width": "10px", "height": "10px",
+                                 "backgroundColor": GROUP_COLORS["Theft"], "marginRight": "8px",
+                                 "borderRadius": "50%"}),
+                html.Span("Theft", style={"fontSize": "12px"})
+            ]),
+            html.Div([
+                html.Span(style={"display": "inline-block", "width": "10px", "height": "10px",
+                                 "backgroundColor": GROUP_COLORS["Nonviolent"], "marginRight": "8px",
+                                 "borderRadius": "50%"}),
+                html.Span("Nonviolent", style={"fontSize": "12px"})
+            ]),
+        ],
+    )
+
+    _left.children = list(_left.children) + [legend]
+except Exception:
+    pass
+
+
+
 if __name__ == "__main__":
     # Dash v3+: use app.run (run_server is deprecated)
     app.run(debug=True)
