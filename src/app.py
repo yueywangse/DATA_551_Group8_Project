@@ -1,4 +1,3 @@
-
 """
 Vancouver Crime Patterns Dashboard (Prototype with neighbourhood polygon map)
 
@@ -727,6 +726,76 @@ def update_dashboard(year, types_selected, tod_selected, clickData, reset_clicks
         summ["top_type"],
         btn_style,
     )
+
+
+# =============================
+# Added: Yearly trend chart (2019–2023) on the right-bottom (no edits to existing code/comments above)
+# =============================
+def fig_yearly_trend(df_all: pd.DataFrame, types_selected, tod_selected, selected_neigh: str | None):
+    # Use full data (not limited by year_dropdown), but keep the current type + time-of-day filters
+    d = filter_df(df_all, year=None, crime_types=types_selected, time_of_day=tod_selected).copy()
+
+    # Limit to 2019–2023
+    d = d[(d["YEAR"] >= 2019) & (d["YEAR"] <= 2023)]
+
+    # If a neighbourhood is selected, show its yearly trend; otherwise show overall yearly trend
+    title = "Yearly trend (2019–2023)"
+    if selected_neigh:
+        d = d[d["NEIGHBOURHOOD"] == selected_neigh]
+        title = f"Yearly trend in {selected_neigh} (2019–2023)"
+
+    # Count incidents per year and fill missing years with 0
+    counts = (
+        d.groupby("YEAR")
+        .size()
+        .reindex(range(2019, 2024), fill_value=0)
+        .reset_index(name="incidents")
+    )
+
+    fig = px.line(counts, x="YEAR", y="incidents", markers=True, title=title)
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
+    fig.update_yaxes(title="# incidents")
+    fig.update_xaxes(title="Year", dtick=1)
+    return fig
+
+
+# Inject the yearly trend graph into the existing right summary panel (mutate layout after creation)
+try:
+    _flex = app.layout.children[1]          # html.Div with display:flex
+    _right = _flex.children[2]              # Right summary div
+    _right.children = list(_right.children) + [
+        html.Hr(),
+        dcc.Graph(id="yearly_trend_graph", config={"displayModeBar": False}),
+    ]
+except Exception:
+    pass
+
+
+# Separate callback just for yearly trend (no changes to your existing main callback)
+@app.callback(
+    Output("yearly_trend_graph", "figure"),
+    Input("type_checklist", "value"),
+    Input("tod_checklist", "value"),
+    Input("map_graph", "clickData"),
+    Input("reset_map_btn", "n_clicks"),
+)
+def update_yearly_trend(types_selected, tod_selected, clickData, reset_clicks):
+    ctx = callback_context
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
+
+    selected_neigh = None
+
+    if trigger == "reset_map_btn":
+        selected_neigh = None
+    elif trigger == "map_graph" and clickData and "points" in clickData and clickData["points"]:
+        pt = clickData["points"][0]
+        if "location" in pt:
+            reverse_map = {v: k for k, v in name_mapping.items()}
+            selected_neigh = reverse_map.get(pt["location"])
+        else:
+            selected_neigh = None
+
+    return fig_yearly_trend(df_all, types_selected, tod_selected, selected_neigh)
 
 
 if __name__ == "__main__":
