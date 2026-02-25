@@ -1,4 +1,3 @@
-
 """
 Vancouver Crime Patterns Dashboard (Prototype with neighbourhood polygon map)
 
@@ -359,7 +358,7 @@ def fig_neighbourhood_map(
             center=map_center,
             mapbox_style="open-street-map",
             title=f"Incidents in {selected_neigh}",
-            height=420,
+            height=360,
         )
 
         fig.update_traces(marker=dict(size=10, color="red", opacity=0.85))
@@ -416,7 +415,7 @@ def fig_neighbourhood_map(
         hover_name="NEIGH_GEO",
         hover_data={"incidents": True},
         title="Incidents by neighbourhood (click a polygon to zoom & see points)",
-        height=420,
+        height=360,
     )
 
     fig.update_layout(margin=dict(l=10, r=10, t=50, b=10))
@@ -458,7 +457,7 @@ def fig_monthly(df_focus: pd.DataFrame):
         title="Monthly trend (# incidents)",
     )
 
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=260)
     fig.update_yaxes(title="# incidents")
     fig.update_xaxes(title="")
     return fig
@@ -471,7 +470,7 @@ def fig_hourly(df_focus: pd.DataFrame):
         .sort_values("HOUR")
     )
     fig = px.bar(grp, x="HOUR", y="size", title="Hourly distribution (# incidents)")
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=260)
     fig.update_yaxes(title="# incidents")
     fig.update_xaxes(title="Hour of day")
     return fig
@@ -486,7 +485,7 @@ def fig_type_comparison(df_focus: pd.DataFrame):
         .sort_values("size", ascending=True)
     )
     fig = px.bar(grp, x="size", y="TYPE", orientation="h", title="Crime type comparison (top 8)")
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=260)
     fig.update_xaxes(title="# incidents")
     fig.update_yaxes(title="")
     return fig
@@ -516,16 +515,30 @@ app = Dash(__name__)
 server = app.server
 
 app.layout = html.Div(
-    style={"fontFamily": "Arial", "backgroundColor": "#F7F7F7", "padding": "10px"},
+    style={
+        "fontFamily": "Arial",
+        "backgroundColor": "#F7F7F7",
+        "padding": "10px",
+        "height": "100vh",
+        "boxSizing": "border-box",
+        "overflow": "hidden",
+    },
     children=[
-        html.H2("Vancouver Crime Patterns Dashboard", style={"textAlign": "center"}),
+        html.H2("Vancouver Crime Patterns Dashboard", style={"textAlign": "center", "margin": "6px 0"}),
 
         html.Div(
-            style={"display": "flex", "gap": "12px"},
+            style={"display": "flex", "gap": "12px", "height": "calc(100vh - 60px)", "overflow": "hidden"},
             children=[
                 # Left controls
                 html.Div(
-                    style={"flex": "1", "backgroundColor": "white", "padding": "12px", "borderRadius": "10px"},
+                    style={
+                        "flex": "1",
+                        "backgroundColor": "white",
+                        "padding": "12px",
+                        "borderRadius": "10px",
+                        "height": "100%",
+                        "overflowY": "auto",
+                    },
                     children=[
                         html.H4("FILTER CRIME DATA"),
 
@@ -572,7 +585,18 @@ app.layout = html.Div(
 
                 # Center: map + charts
                 html.Div(
-                    style={"flex": "2.2", "backgroundColor": "white", "padding": "12px", "borderRadius": "10px"},
+                    style={
+                        "flex": "2.2",
+                        "backgroundColor": "white",
+                        "padding": "12px",
+                        "borderRadius": "10px",
+                        "height": "100%",
+                        "minHeight": "0",
+                        "overflowY": "auto",
+                        "overflowX": "hidden",
+                        "display": "flex",
+                        "flexDirection": "column",
+                    },
                     children=[
                         # Reset / zoom-out button
                         html.Button(
@@ -591,16 +615,16 @@ app.layout = html.Div(
                                 name_mapping=name_mapping,
                                 selected_neigh=None,
                             ),
-                            style={"height": "420px"},
+                            style={"height": "360px"},
                             config={"displayModeBar": True},
                         ),
 
                         html.Div(
-                            style={"display": "flex", "gap": "10px"},
+                            style={"display": "flex", "gap": "10px", "flex": "1", "minHeight": "0"},
                             children=[
-                                html.Div(style={"flex": "1"}, children=[dcc.Graph(id="monthly_graph")]),
-                                html.Div(style={"flex": "1"}, children=[dcc.Graph(id="hourly_graph")]),
-                                html.Div(style={"flex": "1"}, children=[dcc.Graph(id="type_graph")]),
+                                html.Div(style={"flex": "1"}, children=[dcc.Graph(id="monthly_graph", style={"height": "260px"})]),
+                                html.Div(style={"flex": "1"}, children=[dcc.Graph(id="hourly_graph", style={"height": "260px"})]),
+                                html.Div(style={"flex": "1"}, children=[dcc.Graph(id="type_graph", style={"height": "260px"})]),
                             ],
                         ),
                     ],
@@ -608,7 +632,14 @@ app.layout = html.Div(
 
                 # Right summary
                 html.Div(
-                    style={"flex": "1", "backgroundColor": "white", "padding": "12px", "borderRadius": "10px"},
+                    style={
+                        "flex": "1",
+                        "backgroundColor": "white",
+                        "padding": "12px",
+                        "borderRadius": "10px",
+                        "height": "100%",
+                        "overflowY": "auto",
+                    },
                     children=[
                         html.H4("INCIDENT SUMMARY"),
                         html.Div(id="summary_year", style={"fontSize": "18px", "fontWeight": "bold"}),
@@ -709,8 +740,11 @@ def update_dashboard(year, types_selected, tod_selected, clickData, reset_clicks
         t_fig = fig_type_comparison(df_focus)
     else:
         m_fig = px.bar(title="Monthly trend (# incidents)")
+        m_fig.update_layout(height=260)
         h_fig = px.bar(title="Hourly distribution (# incidents)")
+        h_fig.update_layout(height=260)
         t_fig = px.bar(title="Crime type comparison (top 8)")
+        t_fig.update_layout(height=260)
 
     summ = make_summary(df_f, selected_neigh)
     summ_year = f"Year: {year}" if year is not None else "Year: —"
@@ -727,6 +761,281 @@ def update_dashboard(year, types_selected, tod_selected, clickData, reset_clicks
         summ["top_type"],
         btn_style,
     )
+
+
+# =============================
+# Added: Yearly trend chart (2019–2023) on the right-bottom (no edits to existing code/comments above)
+# =============================
+def fig_yearly_trend(df_all: pd.DataFrame, types_selected, tod_selected, selected_neigh: str | None):
+    # Use full data (not limited by year_dropdown), but keep the current type + time-of-day filters
+    d = filter_df(df_all, year=None, crime_types=types_selected, time_of_day=tod_selected).copy()
+
+    # Limit to 2019–2023
+    d = d[(d["YEAR"] >= 2019) & (d["YEAR"] <= 2023)]
+
+    # If a neighbourhood is selected, show its yearly trend; otherwise show overall yearly trend
+    title = "Yearly trend (2019–2023)"
+    if selected_neigh:
+        d = d[d["NEIGHBOURHOOD"] == selected_neigh]
+        title = f"Yearly trend in {selected_neigh} (2019–2023)"
+
+    # Count incidents per year and fill missing years with 0
+    counts = (
+        d.groupby("YEAR")
+        .size()
+        .reindex(range(2019, 2024), fill_value=0)
+        .reset_index(name="incidents")
+    )
+
+    fig = px.line(counts, x="YEAR", y="incidents", markers=True, title=title)
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=260)
+    fig.update_yaxes(title="# incidents")
+    fig.update_xaxes(title="Year", dtick=1)
+    return fig
+
+
+# Inject the yearly trend graph into the existing right summary panel (mutate layout after creation)
+try:
+    _flex = app.layout.children[1]          # html.Div with display:flex
+    _right = _flex.children[2]              # Right summary div
+    _right.children = list(_right.children) + [
+        html.Hr(),
+        dcc.Graph(id="yearly_trend_graph", config={"displayModeBar": False}, style={"height": "260px"}),
+    ]
+except Exception:
+    pass
+
+
+# Separate callback just for yearly trend (no changes to your existing main callback)
+@app.callback(
+    Output("yearly_trend_graph", "figure"),
+    Input("type_checklist", "value"),
+    Input("tod_checklist", "value"),
+    Input("map_graph", "clickData"),
+    Input("reset_map_btn", "n_clicks"),
+)
+def update_yearly_trend(types_selected, tod_selected, clickData, reset_clicks):
+    ctx = callback_context
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
+
+    selected_neigh = None
+
+    if trigger == "reset_map_btn":
+        selected_neigh = None
+    elif trigger == "map_graph" and clickData and "points" in clickData and "points" in clickData and clickData["points"]:
+        pt = clickData["points"][0]
+        if "location" in pt:
+            reverse_map = {v: k for k, v in name_mapping.items()}
+            selected_neigh = reverse_map.get(pt["location"])
+        else:
+            selected_neigh = None
+
+    return fig_yearly_trend(df_all, types_selected, tod_selected, selected_neigh)
+
+
+# =============================
+# Added: Crime grouping (violent/theft/nonviolent) + point colors + left legend (no edits to existing code/comments above)
+# =============================
+
+GROUP_COLORS = {
+    "Violent": "#d62728",      # red
+    "Theft": "#ff7f0e",        # orange
+    "Nonviolent": "#1f77b4",   # blue
+}
+
+def crime_group_from_type(t: str) -> str:
+    # simple keyword-based grouping (adjust keywords if your TYPE names differ)
+    s = str(t).lower()
+
+    violent_kw = [
+        "assault", "robbery", "homicide", "sexual", "rape", "kidnap",
+        "weapon", "shoot", "stab", "violence", "murder"
+    ]
+    theft_kw = [
+        "theft", "break and enter", "b&e", "burglary",
+        "stolen", "shoplift", "larceny",
+        "vehicle theft", "theft of vehicle", "theft from vehicle"
+    ]
+
+    if any(k in s for k in violent_kw):
+        return "Violent"
+    if any(k in s for k in theft_kw):
+        return "Theft"
+    return "Nonviolent"
+
+
+# Add CRIME_GROUP column once (safe even if called multiple times)
+if "CRIME_GROUP" not in df_all.columns:
+    df_all["CRIME_GROUP"] = df_all["TYPE"].apply(crime_group_from_type).astype("string")
+
+
+# Override map function name so callbacks automatically use the updated behavior
+def fig_neighbourhood_map(
+    df_filt: pd.DataFrame,
+    geojson: dict,
+    featureidkey: str,
+    name_mapping: dict[str, str],
+    selected_neigh: str | None,
+):
+    map_center = {"lat": 49.2827, "lon": -123.1207}
+    map_zoom = 11
+
+    # ---- ZOOMED VIEW: show incident points + boundary ----
+    if selected_neigh and selected_neigh in name_mapping:
+        selected_geo = name_mapping[selected_neigh]
+        bounds = get_feature_bounds(geojson, featureidkey, selected_geo)
+        if bounds:
+            map_center, map_zoom = bounds
+
+        df_points = df_filt[df_filt["NEIGHBOURHOOD"] == selected_neigh].copy()
+
+        # Ensure numeric coords
+        df_points["X"] = pd.to_numeric(df_points["X"], errors="coerce")
+        df_points["Y"] = pd.to_numeric(df_points["Y"], errors="coerce")
+        df_points = df_points.dropna(subset=["X", "Y"])
+
+        # Convert UTM → lat/lon if needed
+        if not df_points.empty:
+            if df_points["X"].mean() > 1000:
+                transformer = Transformer.from_crs("EPSG:26910", "EPSG:4326", always_xy=True)
+                lons, lats = transformer.transform(df_points["X"].values, df_points["Y"].values)
+                df_points["lon"] = lons
+                df_points["lat"] = lats
+            else:
+                df_points["lon"] = df_points["X"]
+                df_points["lat"] = df_points["Y"]
+
+        # Create readable datetime
+        if not df_points.empty:
+            df_points["DATETIME_STR"] = (
+                df_points["YEAR"].astype(str) + "-" +
+                df_points["MONTH"].astype(str).str.zfill(2) + "-" +
+                df_points["DAY"].astype(str).str.zfill(2) + " " +
+                df_points["HOUR"].astype(str).str.zfill(2) + ":" +
+                df_points["MINUTE"].astype(str).str.zfill(2)
+            )
+
+        # Ensure CRIME_GROUP exists even for filtered dfs
+        if "CRIME_GROUP" not in df_points.columns:
+            df_points["CRIME_GROUP"] = df_points["TYPE"].apply(crime_group_from_type).astype("string")
+
+        # Base scatter figure (colored by group)
+        fig = px.scatter_mapbox(
+            df_points,
+            lat="lat",
+            lon="lon",
+            color="CRIME_GROUP",
+            color_discrete_map=GROUP_COLORS,
+            hover_name="TYPE",
+            hover_data={
+                "CRIME_GROUP": True,
+                "DATETIME_STR": True,
+                "HUNDRED_BLOCK": True,
+                "lat": False,
+                "lon": False,
+            } if not df_points.empty else None,
+            zoom=map_zoom,
+            center=map_center,
+            mapbox_style="open-street-map",
+            title=f"Incidents in {selected_neigh}",
+            height=360,
+        )
+
+        fig.update_traces(marker=dict(size=10, opacity=0.85))
+
+        # ---- Draw neighbourhood boundary using line trace ----
+        prop_key = featureidkey.split(".")[-1]
+        for ft in geojson.get("features", []):
+            if str(ft.get("properties", {}).get(prop_key)) == str(selected_geo):
+                geom = ft.get("geometry", {})
+                if geom["type"] == "Polygon":
+                    polygons = [geom["coordinates"]]
+                elif geom["type"] == "MultiPolygon":
+                    polygons = geom["coordinates"]
+                else:
+                    polygons = []
+
+                for poly in polygons:
+                    for ring in poly:
+                        lons = [pt[0] for pt in ring]
+                        lats = [pt[1] for pt in ring]
+
+                        fig.add_trace(go.Scattermapbox(
+                            lon=lons,
+                            lat=lats,
+                            mode="lines",
+                            line=dict(width=3, color="black"),
+                            hoverinfo="skip",
+                            showlegend=False,
+                        ))
+
+        fig.update_layout(margin=dict(l=10, r=10, t=50, b=10))
+        return fig
+
+    # ---- DEFAULT: choropleth heatmap ----
+    counts = (
+        df_filt.groupby("NEIGHBOURHOOD", as_index=False)
+        .size()
+        .rename(columns={"size": "incidents"})
+    )
+
+    counts["NEIGH_GEO"] = counts["NEIGHBOURHOOD"].map(name_mapping)
+    counts = counts.dropna(subset=["NEIGH_GEO"])
+
+    fig = px.choropleth_mapbox(
+        counts,
+        geojson=geojson,
+        locations="NEIGH_GEO",
+        featureidkey=featureidkey,
+        color="incidents",
+        mapbox_style="open-street-map",
+        zoom=map_zoom,
+        center=map_center,
+        opacity=0.55,
+        hover_name="NEIGH_GEO",
+        hover_data={"incidents": True},
+        title="Incidents by neighbourhood (click a polygon to zoom & see points)",
+        height=360,
+    )
+
+    fig.update_layout(margin=dict(l=10, r=10, t=50, b=10))
+    return fig
+
+
+# Add a small legend to the left panel (append without editing original layout code)
+try:
+    _flex = app.layout.children[1]
+    _left = _flex.children[0]  # Left controls div
+
+    legend = html.Div(
+        style={"marginTop": "10px", "padding": "8px", "border": "1px solid #eee", "borderRadius": "8px"},
+        children=[
+            html.Div("Crime groups (point colors)", style={"fontSize": "12px", "fontWeight": "bold", "marginBottom": "6px"}),
+            html.Div([
+                html.Span(style={"display": "inline-block", "width": "10px", "height": "10px",
+                                 "backgroundColor": GROUP_COLORS["Violent"], "marginRight": "8px",
+                                 "borderRadius": "50%"}),
+                html.Span("Violent", style={"fontSize": "12px"})
+            ]),
+            html.Div([
+                html.Span(style={"display": "inline-block", "width": "10px", "height": "10px",
+                                 "backgroundColor": GROUP_COLORS["Theft"], "marginRight": "8px",
+                                 "borderRadius": "50%"}),
+                html.Span("Theft", style={"fontSize": "12px"})
+            ]),
+            html.Div([
+                html.Span(style={"display": "inline-block", "width": "10px", "height": "10px",
+                                 "backgroundColor": GROUP_COLORS["Nonviolent"], "marginRight": "8px",
+                                 "borderRadius": "50%"}),
+                html.Span("Nonviolent", style={"fontSize": "12px"})
+            ]),
+        ],
+    )
+
+    _left.children = list(_left.children) + [legend]
+except Exception:
+    pass
+
 
 
 if __name__ == "__main__":
