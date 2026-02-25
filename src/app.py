@@ -358,7 +358,7 @@ def fig_neighbourhood_map(
             center=map_center,
             mapbox_style="open-street-map",
             title=f"Incidents in {selected_neigh}",
-            height=420,
+            height=360,
         )
 
         fig.update_traces(marker=dict(size=10, color="red", opacity=0.85))
@@ -415,7 +415,7 @@ def fig_neighbourhood_map(
         hover_name="NEIGH_GEO",
         hover_data={"incidents": True},
         title="Incidents by neighbourhood (click a polygon to zoom & see points)",
-        height=420,
+        height=360,
     )
 
     fig.update_layout(margin=dict(l=10, r=10, t=50, b=10))
@@ -457,7 +457,7 @@ def fig_monthly(df_focus: pd.DataFrame):
         title="Monthly trend (# incidents)",
     )
 
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=260)
     fig.update_yaxes(title="# incidents")
     fig.update_xaxes(title="")
     return fig
@@ -470,7 +470,7 @@ def fig_hourly(df_focus: pd.DataFrame):
         .sort_values("HOUR")
     )
     fig = px.bar(grp, x="HOUR", y="size", title="Hourly distribution (# incidents)")
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=260)
     fig.update_yaxes(title="# incidents")
     fig.update_xaxes(title="Hour of day")
     return fig
@@ -485,7 +485,7 @@ def fig_type_comparison(df_focus: pd.DataFrame):
         .sort_values("size", ascending=True)
     )
     fig = px.bar(grp, x="size", y="TYPE", orientation="h", title="Crime type comparison (top 8)")
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=260)
     fig.update_xaxes(title="# incidents")
     fig.update_yaxes(title="")
     return fig
@@ -515,16 +515,30 @@ app = Dash(__name__)
 server = app.server
 
 app.layout = html.Div(
-    style={"fontFamily": "Arial", "backgroundColor": "#F7F7F7", "padding": "10px"},
+    style={
+        "fontFamily": "Arial",
+        "backgroundColor": "#F7F7F7",
+        "padding": "10px",
+        "height": "100vh",
+        "boxSizing": "border-box",
+        "overflow": "hidden",
+    },
     children=[
-        html.H2("Vancouver Crime Patterns Dashboard", style={"textAlign": "center"}),
+        html.H2("Vancouver Crime Patterns Dashboard", style={"textAlign": "center", "margin": "6px 0"}),
 
         html.Div(
-            style={"display": "flex", "gap": "12px"},
+            style={"display": "flex", "gap": "12px", "height": "calc(100vh - 60px)", "overflow": "hidden"},
             children=[
                 # Left controls
                 html.Div(
-                    style={"flex": "1", "backgroundColor": "white", "padding": "12px", "borderRadius": "10px"},
+                    style={
+                        "flex": "1",
+                        "backgroundColor": "white",
+                        "padding": "12px",
+                        "borderRadius": "10px",
+                        "height": "100%",
+                        "overflowY": "auto",
+                    },
                     children=[
                         html.H4("FILTER CRIME DATA"),
 
@@ -571,7 +585,18 @@ app.layout = html.Div(
 
                 # Center: map + charts
                 html.Div(
-                    style={"flex": "2.2", "backgroundColor": "white", "padding": "12px", "borderRadius": "10px"},
+                    style={
+                        "flex": "2.2",
+                        "backgroundColor": "white",
+                        "padding": "12px",
+                        "borderRadius": "10px",
+                        "height": "100%",
+                        "minHeight": "0",
+                        "overflowY": "auto",
+                        "overflowX": "hidden",
+                        "display": "flex",
+                        "flexDirection": "column",
+                    },
                     children=[
                         # Reset / zoom-out button
                         html.Button(
@@ -590,16 +615,16 @@ app.layout = html.Div(
                                 name_mapping=name_mapping,
                                 selected_neigh=None,
                             ),
-                            style={"height": "420px"},
+                            style={"height": "360px"},
                             config={"displayModeBar": True},
                         ),
 
                         html.Div(
-                            style={"display": "flex", "gap": "10px"},
+                            style={"display": "flex", "gap": "10px", "flex": "1", "minHeight": "0"},
                             children=[
-                                html.Div(style={"flex": "1"}, children=[dcc.Graph(id="monthly_graph")]),
-                                html.Div(style={"flex": "1"}, children=[dcc.Graph(id="hourly_graph")]),
-                                html.Div(style={"flex": "1"}, children=[dcc.Graph(id="type_graph")]),
+                                html.Div(style={"flex": "1"}, children=[dcc.Graph(id="monthly_graph", style={"height": "260px"})]),
+                                html.Div(style={"flex": "1"}, children=[dcc.Graph(id="hourly_graph", style={"height": "260px"})]),
+                                html.Div(style={"flex": "1"}, children=[dcc.Graph(id="type_graph", style={"height": "260px"})]),
                             ],
                         ),
                     ],
@@ -607,7 +632,14 @@ app.layout = html.Div(
 
                 # Right summary
                 html.Div(
-                    style={"flex": "1", "backgroundColor": "white", "padding": "12px", "borderRadius": "10px"},
+                    style={
+                        "flex": "1",
+                        "backgroundColor": "white",
+                        "padding": "12px",
+                        "borderRadius": "10px",
+                        "height": "100%",
+                        "overflowY": "auto",
+                    },
                     children=[
                         html.H4("INCIDENT SUMMARY"),
                         html.Div(id="summary_year", style={"fontSize": "18px", "fontWeight": "bold"}),
@@ -708,8 +740,11 @@ def update_dashboard(year, types_selected, tod_selected, clickData, reset_clicks
         t_fig = fig_type_comparison(df_focus)
     else:
         m_fig = px.bar(title="Monthly trend (# incidents)")
+        m_fig.update_layout(height=260)
         h_fig = px.bar(title="Hourly distribution (# incidents)")
+        h_fig.update_layout(height=260)
         t_fig = px.bar(title="Crime type comparison (top 8)")
+        t_fig.update_layout(height=260)
 
     summ = make_summary(df_f, selected_neigh)
     summ_year = f"Year: {year}" if year is not None else "Year: —"
@@ -753,7 +788,7 @@ def fig_yearly_trend(df_all: pd.DataFrame, types_selected, tod_selected, selecte
     )
 
     fig = px.line(counts, x="YEAR", y="incidents", markers=True, title=title)
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=260)
     fig.update_yaxes(title="# incidents")
     fig.update_xaxes(title="Year", dtick=1)
     return fig
@@ -765,7 +800,7 @@ try:
     _right = _flex.children[2]              # Right summary div
     _right.children = list(_right.children) + [
         html.Hr(),
-        dcc.Graph(id="yearly_trend_graph", config={"displayModeBar": False}),
+        dcc.Graph(id="yearly_trend_graph", config={"displayModeBar": False}, style={"height": "260px"}),
     ]
 except Exception:
     pass
@@ -787,7 +822,7 @@ def update_yearly_trend(types_selected, tod_selected, clickData, reset_clicks):
 
     if trigger == "reset_map_btn":
         selected_neigh = None
-    elif trigger == "map_graph" and clickData and "points" in clickData and clickData["points"]:
+    elif trigger == "map_graph" and clickData and "points" in clickData and "points" in clickData and clickData["points"]:
         pt = clickData["points"][0]
         if "location" in pt:
             reverse_map = {v: k for k, v in name_mapping.items()}
@@ -903,7 +938,7 @@ def fig_neighbourhood_map(
             center=map_center,
             mapbox_style="open-street-map",
             title=f"Incidents in {selected_neigh}",
-            height=420,
+            height=360,
         )
 
         fig.update_traces(marker=dict(size=10, opacity=0.85))
@@ -960,7 +995,7 @@ def fig_neighbourhood_map(
         hover_name="NEIGH_GEO",
         hover_data={"incidents": True},
         title="Incidents by neighbourhood (click a polygon to zoom & see points)",
-        height=420,
+        height=360,
     )
 
     fig.update_layout(margin=dict(l=10, r=10, t=50, b=10))
