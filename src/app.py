@@ -1,6 +1,11 @@
 """
 Vancouver Crime Patterns Dashboard (Neighbourhood polygon map + zoom-to-points)
 
+Behavior requested:
+- Choropleth (NOT zoomed): map has NO CRIME_GROUP legend; left Crime Type checklist shows ONLY text (no dots)
+- Zoomed (selected neighbourhood): map switches to points colored by CRIME_GROUP (legend appears);
+  left Crime Type checklist shows colored dots per type (same colors for same group)
+
 How to run:
 1) Put your Kaggle CSV at: data/raw/crimes.csv (or change DATA_PATH)
 2) Download a Vancouver neighbourhood/local-area GeoJSON and save to: data/raw/local_areas.geojson
@@ -13,13 +18,13 @@ from __future__ import annotations
 
 import json
 import math
-import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
 from dash import Dash, dcc, html, Input, Output, State, callback_context
 from pyproj import Transformer
+
 
 # -----------------------------
 # Config
@@ -34,6 +39,7 @@ USECOLS = [
 ]
 
 TOD_OPTIONS = ["Morning (6–12)", "Afternoon (12–18)", "Evening (18–24)", "Night (0–6)"]
+
 
 # -----------------------------
 # Crime grouping (point colors)
@@ -60,6 +66,7 @@ def crime_group_from_type(t: str) -> str:
     if any(k in s for k in theft_kw):
         return "Theft"
     return "Nonviolent"
+
 
 # -----------------------------
 # Data load + prep
@@ -88,7 +95,7 @@ def load_data(path: str, nrows: int | None = None) -> pd.DataFrame:
 
     df = df.dropna(subset=["YEAR", "TYPE", "NEIGHBOURHOOD", "HOUR", "MONTH"])
 
-    # Group column for map point coloring
+    # group column for map point coloring
     df["CRIME_GROUP"] = df["TYPE"].apply(crime_group_from_type).astype("string")
 
     return df
@@ -96,6 +103,7 @@ def load_data(path: str, nrows: int | None = None) -> pd.DataFrame:
 def load_geojson(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
 
 # -----------------------------
 # Filtering
@@ -114,6 +122,7 @@ def filter_df(
     if time_of_day:
         out = out[out["TIME_OF_DAY"].isin(time_of_day)]
     return out
+
 
 # -----------------------------
 # GeoJSON matching helpers
@@ -181,7 +190,6 @@ def detect_featureidkey_and_mapping(geojson: dict, df_neigh_values: list[str]) -
     return featureidkey, mapping
 
 def clicked_neighbourhood_from_polygon(click_data: dict | None, name_mapping: dict[str, str]) -> str | None:
-    """For choropleth polygons, clickData points often include point['location']."""
     if not click_data or "points" not in click_data or not click_data["points"]:
         return None
     pt = click_data["points"][0]
@@ -239,13 +247,13 @@ def get_feature_bounds(
             return center, zoom
     return None
 
+
 # -----------------------------
 # Summary + charts
 # -----------------------------
 def make_summary(df_filt: pd.DataFrame, selected_neigh: str | None) -> dict:
     d = df_filt
     selected_area_label = "All neighbourhoods"
-
     if selected_neigh:
         d = d[d["NEIGHBOURHOOD"] == selected_neigh]
         selected_area_label = selected_neigh
@@ -315,8 +323,11 @@ def fig_yearly_trend(df_all: pd.DataFrame, types_selected, tod_selected, selecte
     fig.update_xaxes(title="Year", dtick=1)
     return fig
 
+
 # -----------------------------
 # Map figure (choropleth or zoomed points)
+#   - Choropleth: no legend
+#   - Zoomed points: legend visible
 # -----------------------------
 def fig_neighbourhood_map(
     df_filt: pd.DataFrame,
@@ -342,7 +353,6 @@ def fig_neighbourhood_map(
         df_points = df_points.dropna(subset=["X", "Y"])
 
         if not df_points.empty:
-            # UTM -> lat/lon if looks like meters
             if df_points["X"].mean() > 1000:
                 transformer = Transformer.from_crs("EPSG:26910", "EPSG:4326", always_xy=True)
                 lons, lats = transformer.transform(df_points["X"].values, df_points["Y"].values)
@@ -382,7 +392,7 @@ def fig_neighbourhood_map(
         )
         fig.update_traces(marker=dict(size=10, opacity=0.85))
 
-        # boundary line
+        # neighbourhood boundary line
         prop_key = featureidkey.split(".")[-1]
         for ft in geojson.get("features", []):
             if str(ft.get("properties", {}).get(prop_key)) == str(selected_geo):
@@ -407,7 +417,7 @@ def fig_neighbourhood_map(
         fig.update_layout(margin=dict(l=10, r=10, t=55, b=10))
         return fig
 
-    # ---- DEFAULT: choropleth heatmap ----
+    # ---- DEFAULT: choropleth heatmap (no legend) ----
     counts = df_filt.groupby("NEIGHBOURHOOD", as_index=False).size().rename(columns={"size": "incidents"})
     counts["NEIGH_GEO"] = counts["NEIGHBOURHOOD"].map(name_mapping)
     counts = counts.dropna(subset=["NEIGH_GEO"])
@@ -427,13 +437,24 @@ def fig_neighbourhood_map(
         title="Incidents by neighbourhood (click a polygon to zoom & see points)",
         height=420,
     )
+
+    # hide choropleth legend / coloraxis bar? (you can keep the incidents colorbar if you want)
+    # If you want to hide the "incidents" colorbar too, uncomment:
+    # fig.update_layout(coloraxis_showscale=False)
+
     fig.update_layout(margin=dict(l=10, r=10, t=55, b=10))
     return fig
 
+
 # -----------------------------
-# Checklist labels with colored dots (your teammate’s suggestion)
+# Crime type checklist options
+#   - plain (no dots): used when NOT zoomed
+#   - dotted: used when zoomed
 # -----------------------------
-def make_type_options(types_list: list[str]):
+def make_type_options_plain(types_list: list[str]):
+    return [{"label": str(t), "value": t} for t in types_list]
+
+def make_type_options_dotted(types_list: list[str]):
     opts = []
     for t in types_list:
         grp = crime_group_from_type(t)
@@ -459,6 +480,7 @@ def make_type_options(types_list: list[str]):
         opts.append({"label": label, "value": t})
     return opts
 
+
 # -----------------------------
 # Initialize
 # -----------------------------
@@ -473,6 +495,7 @@ featureidkey, name_mapping = detect_featureidkey_and_mapping(
     geojson=geo,
     df_neigh_values=sorted(df_all["NEIGHBOURHOOD"].dropna().unique().tolist())[:500],
 )
+
 
 # -----------------------------
 # App
@@ -522,7 +545,8 @@ app.layout = html.Div(
                         html.Label("Crime Type Filter"),
                         dcc.Checklist(
                             id="type_checklist",
-                            options=make_type_options(crime_types_all),  # <-- dot beside each option
+                            # initial: NOT zoomed, so plain options
+                            options=make_type_options_plain(crime_types_all),
                             value=crime_types_all[:4],
                             inputStyle={"marginRight": "8px"},
                         ),
@@ -587,12 +611,11 @@ app.layout = html.Div(
                             config={"displayModeBar": True, "responsive": True},
                         ),
 
-                        # charts row
                         html.Div(
                             style={
                                 "display": "flex",
                                 "gap": "10px",
-                                "flexWrap": "wrap",  # helps small screens
+                                "flexWrap": "wrap",
                             },
                             children=[
                                 html.Div(style={"flex": "1 1 320px"}, children=[dcc.Graph(id="monthly_graph", config={"displayModeBar": False})]),
@@ -641,6 +664,7 @@ app.layout = html.Div(
     ],
 )
 
+
 # -----------------------------
 # Reset filters callback
 # -----------------------------
@@ -654,8 +678,9 @@ app.layout = html.Div(
 def reset_filters(_n):
     return default_year, crime_types_all[:4], TOD_OPTIONS
 
+
 # -----------------------------
-# Store selected neighbourhood (so it persists when filters change)
+# Store selected neighbourhood (persists while filters change)
 # -----------------------------
 @app.callback(
     Output("selected_neigh_store", "data"),
@@ -672,11 +697,26 @@ def update_selected_neigh(clickData, reset_clicks, current_selected):
 
     if trigger == "map_graph":
         clicked = clicked_neighbourhood_from_polygon(clickData, name_mapping)
-        # Only update selection if a polygon was clicked. Point-clicks do NOT change selection.
         if clicked:
             return clicked
 
     return current_selected
+
+
+# -----------------------------
+# Toggle type checklist dot display:
+#   - not zoomed (no selected_neigh) -> plain
+#   - zoomed (selected_neigh) -> dotted
+# -----------------------------
+@app.callback(
+    Output("type_checklist", "options"),
+    Input("selected_neigh_store", "data"),
+)
+def toggle_type_options(selected_neigh):
+    if not selected_neigh:
+        return make_type_options_plain(crime_types_all)
+    return make_type_options_dotted(crime_types_all)
+
 
 # -----------------------------
 # Main update callback
@@ -699,7 +739,6 @@ def update_selected_neigh(clickData, reset_clicks, current_selected):
 )
 def update_dashboard(year, types_selected, tod_selected, selected_neigh):
     df_f = filter_df(df_all, year, types_selected, tod_selected)
-
     df_focus = df_f if not selected_neigh else df_f[df_f["NEIGHBOURHOOD"] == selected_neigh]
 
     map_fig = fig_neighbourhood_map(
@@ -734,6 +773,7 @@ def update_dashboard(year, types_selected, tod_selected, selected_neigh):
         btn_style,
     )
 
+
 # -----------------------------
 # Yearly trend callback (2019–2023)
 # -----------------------------
@@ -745,6 +785,7 @@ def update_dashboard(year, types_selected, tod_selected, selected_neigh):
 )
 def update_yearly(types_selected, tod_selected, selected_neigh):
     return fig_yearly_trend(df_all, types_selected, tod_selected, selected_neigh)
+
 
 if __name__ == "__main__":
     app.run(debug=True)
