@@ -25,13 +25,12 @@ import plotly.graph_objects as go
 from dash import Dash, dcc, html, Input, Output, State, callback_context
 from pyproj import Transformer
 
-
 # -----------------------------
 # Config
 # -----------------------------
 DATA_PATH = "data/raw/crimes.csv"
 GEOJSON_PATH = "data/raw/local_areas.geojson"
-DEV_NROWS = None  # e.g. 200000 during dev, or None for full file
+DEV_NROWS = None
 
 USECOLS = [
     "TYPE", "YEAR", "MONTH", "DAY", "HOUR", "MINUTE",
@@ -39,7 +38,6 @@ USECOLS = [
 ]
 
 TOD_OPTIONS = ["Morning (6–12)", "Afternoon (12–18)", "Evening (18–24)", "Night (0–6)"]
-
 
 # -----------------------------
 # Crime grouping (point colors)
@@ -66,7 +64,6 @@ def crime_group_from_type(t: str) -> str:
     if any(k in s for k in theft_kw):
         return "Theft"
     return "Nonviolent"
-
 
 # -----------------------------
 # Data load + prep
@@ -104,7 +101,6 @@ def load_geojson(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-
 # -----------------------------
 # Filtering
 # -----------------------------
@@ -122,7 +118,6 @@ def filter_df(
     if time_of_day:
         out = out[out["TIME_OF_DAY"].isin(time_of_day)]
     return out
-
 
 # -----------------------------
 # GeoJSON matching helpers
@@ -247,7 +242,6 @@ def get_feature_bounds(
             return center, zoom
     return None
 
-
 # -----------------------------
 # Summary + charts
 # -----------------------------
@@ -311,10 +305,10 @@ def fig_yearly_trend(df_all: pd.DataFrame, types_selected, tod_selected, selecte
     d = filter_df(df_all, year=None, crime_types=types_selected, time_of_day=tod_selected).copy()
     d = d[(d["YEAR"] >= 2019) & (d["YEAR"] <= 2023)]
 
-    title = "Yearly trend (2019–2023)"
+    title = "Yearly trend<br>(2019–2023)"
     if selected_neigh:
         d = d[d["NEIGHBOURHOOD"] == selected_neigh]
-        title = f"Yearly trend in {selected_neigh} (2019–2023)"
+        title = f"Yearly trend in {selected_neigh}<br>(2019–2023)"
 
     counts = d.groupby("YEAR").size().reindex(range(2019, 2024), fill_value=0).reset_index(name="incidents")
     fig = px.line(counts, x="YEAR", y="incidents", markers=True, title=title)
@@ -322,7 +316,6 @@ def fig_yearly_trend(df_all: pd.DataFrame, types_selected, tod_selected, selecte
     fig.update_yaxes(title="# incidents")
     fig.update_xaxes(title="Year", dtick=1)
     return fig
-
 
 # -----------------------------
 # Map figure (choropleth or zoomed points)
@@ -339,7 +332,6 @@ def fig_neighbourhood_map(
     map_center = {"lat": 49.2827, "lon": -123.1207}
     map_zoom = 11
 
-    # ---- ZOOMED VIEW: incident points + boundary ----
     if selected_neigh and selected_neigh in name_mapping:
         selected_geo = name_mapping[selected_neigh]
         bounds = get_feature_bounds(geojson, featureidkey, selected_geo)
@@ -438,13 +430,8 @@ def fig_neighbourhood_map(
         height=420,
     )
 
-    # hide choropleth legend / coloraxis bar? (you can keep the incidents colorbar if you want)
-    # If you want to hide the "incidents" colorbar too, uncomment:
-    # fig.update_layout(coloraxis_showscale=False)
-
     fig.update_layout(margin=dict(l=10, r=10, t=55, b=10))
     return fig
-
 
 # -----------------------------
 # Crime type checklist options
@@ -480,7 +467,6 @@ def make_type_options_dotted(types_list: list[str]):
         opts.append({"label": label, "value": t})
     return opts
 
-
 # -----------------------------
 # Initialize
 # -----------------------------
@@ -495,7 +481,6 @@ featureidkey, name_mapping = detect_featureidkey_and_mapping(
     geojson=geo,
     df_neigh_values=sorted(df_all["NEIGHBOURHOOD"].dropna().unique().tolist())[:500],
 )
-
 
 # -----------------------------
 # App
@@ -514,9 +499,7 @@ app.layout = html.Div(
     },
     children=[
         dcc.Store(id="selected_neigh_store", data=None),
-
         html.H2("Vancouver Crime Patterns Dashboard", style={"textAlign": "center", "margin": "6px 0"}),
-
         html.Div(
             style={"display": "flex", "gap": "12px", "height": "calc(100vh - 60px)", "overflow": "hidden"},
             children=[
@@ -545,7 +528,6 @@ app.layout = html.Div(
                         html.Label("Crime Type Filter"),
                         dcc.Checklist(
                             id="type_checklist",
-                            # initial: NOT zoomed, so plain options
                             options=make_type_options_plain(crime_types_all),
                             value=crime_types_all[:4],
                             inputStyle={"marginRight": "8px"},
@@ -578,7 +560,7 @@ app.layout = html.Div(
                 # Center: map + charts
                 html.Div(
                     style={
-                        "flex": "2.2",
+                        "flex": "3",
                         "backgroundColor": "white",
                         "padding": "12px",
                         "borderRadius": "10px",
@@ -664,7 +646,6 @@ app.layout = html.Div(
     ],
 )
 
-
 # -----------------------------
 # Reset filters callback
 # -----------------------------
@@ -678,7 +659,6 @@ app.layout = html.Div(
 def reset_filters(_n):
     return default_year, crime_types_all[:4], TOD_OPTIONS
 
-
 # -----------------------------
 # Store selected neighbourhood (persists while filters change)
 # -----------------------------
@@ -688,6 +668,7 @@ def reset_filters(_n):
     Input("reset_map_btn", "n_clicks"),
     State("selected_neigh_store", "data"),
 )
+
 def update_selected_neigh(clickData, reset_clicks, current_selected):
     ctx = callback_context
     trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
@@ -702,7 +683,6 @@ def update_selected_neigh(clickData, reset_clicks, current_selected):
 
     return current_selected
 
-
 # -----------------------------
 # Toggle type checklist dot display:
 #   - not zoomed (no selected_neigh) -> plain
@@ -712,6 +692,7 @@ def update_selected_neigh(clickData, reset_clicks, current_selected):
     Output("type_checklist", "options"),
     Input("selected_neigh_store", "data"),
 )
+
 def toggle_type_options(selected_neigh):
     if not selected_neigh:
         return make_type_options_plain(crime_types_all)
@@ -737,6 +718,7 @@ def toggle_type_options(selected_neigh):
     Input("tod_checklist", "value"),
     Input("selected_neigh_store", "data"),
 )
+
 def update_dashboard(year, types_selected, tod_selected, selected_neigh):
     df_f = filter_df(df_all, year, types_selected, tod_selected)
     df_focus = df_f if not selected_neigh else df_f[df_f["NEIGHBOURHOOD"] == selected_neigh]
@@ -773,7 +755,6 @@ def update_dashboard(year, types_selected, tod_selected, selected_neigh):
         btn_style,
     )
 
-
 # -----------------------------
 # Yearly trend callback (2019–2023)
 # -----------------------------
@@ -783,9 +764,9 @@ def update_dashboard(year, types_selected, tod_selected, selected_neigh):
     Input("tod_checklist", "value"),
     Input("selected_neigh_store", "data"),
 )
+
 def update_yearly(types_selected, tod_selected, selected_neigh):
     return fig_yearly_trend(df_all, types_selected, tod_selected, selected_neigh)
-
 
 if __name__ == "__main__":
     app.run(debug=True)
