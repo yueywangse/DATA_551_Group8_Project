@@ -369,6 +369,11 @@ def fig_neighbourhood_map(
                 df_points["HOUR"].astype(str).str.zfill(2) + ":" +
                 df_points["MINUTE"].astype(str).str.zfill(2)
             )
+        
+        df_points["Crime type"] = df_points["TYPE"]
+        df_points["Category"] = df_points["CRIME_GROUP"]
+        df_points["Date & time"] = df_points["DATETIME_STR"]
+        df_points["Block"] = df_points["HUNDRED_BLOCK"]
 
         fig = px.scatter_mapbox(
             df_points,
@@ -376,21 +381,28 @@ def fig_neighbourhood_map(
             lon="lon",
             color="CRIME_GROUP",
             color_discrete_map=GROUP_COLORS,
-            hover_name="TYPE",
+            
+            hover_name="Crime type",
+            
             hover_data={
-                "CRIME_GROUP": True,
-                "DATETIME_STR": True,
-                "HUNDRED_BLOCK": True,
+                "Category": True,
+                "Date & time": True,
+                "Block": True,
+                
+                "CRIME_GROUP": False,
+                "DATETIME_STR": False,
+                "HUNDRED_BLOCK": False,
+                "TYPE": False,
                 "lat": False,
                 "lon": False,
-            } if not df_points.empty else None,
-            zoom=map_zoom,
-            center=map_center,
-            mapbox_style="open-street-map",
-            title=f"Incidents in {selected_neigh}",
-            height=420,
-        )
-        fig.update_traces(marker=dict(size=10, opacity=0.85))
+                } if not df_points.empty else None,
+                
+                zoom=map_zoom,
+                center=map_center,
+                mapbox_style="open-street-map",
+                title=f"Incidents in {selected_neigh}",
+                height=420,
+                )
 
         # neighbourhood boundary line
         prop_key = featureidkey.split(".")[-1]
