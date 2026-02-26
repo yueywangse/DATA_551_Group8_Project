@@ -1,6 +1,8 @@
 # Vancouver Crime Patterns Dashboard
 
 ### Section 1: Motivation and Purpose
+Our Role: Vancouver Rental Agency
+
 Target audience: Residents planning to rent or buy a home in Vancouver, or tourists planning to visit Vancouver, like many of our classmates are considering or have done
 When choosing a residential area for either long or short term stays, community safety is a crucial consideration for renters and homebuyers. Crime data is often presented in raw tabular form, which is often information-heavy and complex, making it difficult for residents to assess safety trends across different neighborhoods. To help potential residents make more informed housing decisions, we plan to build an interactive data visualization application that will allow users to explore crime data from different neighborhoods and time factors in Vancouver. This application will display the distribution and trends of various crime types across different neighborhoods and allow users to compare data by year, month, hour, location, and crime type, providing a clearer understanding of community safety and supporting more informed renting or buying decisions.
 
