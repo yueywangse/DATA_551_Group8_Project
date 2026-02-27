@@ -2,7 +2,7 @@
 
 An interactive visualization tool for exploring long-term crime trends across Vancouver neighbourhoods using coordinated maps, filters, and analytical charts.
 
-[Gif Link Here]
+![Demo](Deployment.gif)
 
 ---
 
@@ -88,7 +88,7 @@ All views update automatically based on selected filters and map interactions.
 
 ## Deployment
  
-[Insert Deployment Link Here]
+[Deployment Link](https://data-551-group8-project.onrender.com/)
 
 ---
 
