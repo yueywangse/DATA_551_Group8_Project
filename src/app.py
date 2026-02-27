@@ -34,7 +34,6 @@ GEOJSON_PATH = "data/raw/local_areas.geojson"
 #DEV_NROWS = None
 
 DEV_NROWS = 200000
-df = load_data(DATA_PATH, nrows=DEV_NROWS)
 
 USECOLS = [
     "TYPE", "YEAR", "MONTH", "DAY", "HOUR", "MINUTE",
