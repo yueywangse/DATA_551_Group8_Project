@@ -16,6 +16,7 @@ Open: http://127.0.0.1:8050
 
 from __future__ import annotations
 
+import os
 import json
 import math
 import pandas as pd
@@ -30,7 +31,10 @@ from pyproj import Transformer
 # -----------------------------
 DATA_PATH = "data/raw/crimes.csv"
 GEOJSON_PATH = "data/raw/local_areas.geojson"
-DEV_NROWS = None
+#DEV_NROWS = None
+
+DEV_NROWS = 200000
+df = load_data(DATA_PATH, nrows=DEV_NROWS)
 
 USECOLS = [
     "TYPE", "YEAR", "MONTH", "DAY", "HOUR", "MINUTE",
@@ -768,5 +772,9 @@ def update_dashboard(year, types_selected, tod_selected, selected_neigh):
 def update_yearly(types_selected, tod_selected, selected_neigh):
     return fig_yearly_trend(df_all, types_selected, tod_selected, selected_neigh)
 
+# if __name__ == "__main__":
+#     app.run(debug=True)
+
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False, host="0.0.0.0", port=int(os.environ.get("PORT", 8050)))
