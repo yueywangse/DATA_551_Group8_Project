@@ -1,38 +1,36 @@
-
 """
-Vancouver Crime Patterns Dashboard (Prototype with neighbourhood polygon map)
+Vancouver Crime Patterns Dashboard (Neighbourhood polygon map + zoom-to-points)
+
+Behavior requested:
+- Choropleth (NOT zoomed): map has NO CRIME_GROUP legend; left Crime Type checklist shows ONLY text (no dots)
+- Zoomed (selected neighbourhood): map switches to points colored by CRIME_GROUP (legend appears);
+  left Crime Type checklist shows colored dots per type (same colors for same group)
 
 How to run:
-1) Put your Kaggle CSV at: data/raw/crime.csv (or change DATA_PATH)
-2) Download a Vancouver neighbourhood/local-area GeoJSON and save to: data/geo/local_areas.geojson
-3) Install deps: pip install dash plotly pandas numpy
-4) Run: python src/app.py
+1) Put your Kaggle CSV at: data/raw/crimes.csv (or change DATA_PATH)
+2) Download a Vancouver neighbourhood/local-area GeoJSON and save to: data/raw/local_areas.geojson
+3) pip install dash plotly pandas numpy pyproj
+4) python src/app.py
 Open: http://127.0.0.1:8050
-
-Your dataset columns (from screenshot):
-TYPE, YEAR, MONTH, DAY, HOUR, MINUTE, HUNDRED_BLOCK, NEIGHBOURHOOD, X, Y
 """
 
 from __future__ import annotations
 
 import json
-import numpy as np
-import pandas as pd
 import math
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-from dash import Dash, dcc, html, Input, Output, callback_context
+from dash import Dash, dcc, html, Input, Output, State, callback_context
 from pyproj import Transformer
-
-
 
 # -----------------------------
 # Config
 # -----------------------------
-DATA_PATH = "data/raw/crimes.csv"                 # path  to the dataset
-GEOJSON_PATH = "data/raw/local_areas.geojson"    # path to the map json file
-DEV_NROWS = None  # set to e.g. 200000 during dev for speed, or None for full file
+DATA_PATH = "data/raw/crimes.csv"
+GEOJSON_PATH = "data/raw/local_areas.geojson"
+DEV_NROWS = None
 
 USECOLS = [
     "TYPE", "YEAR", "MONTH", "DAY", "HOUR", "MINUTE",
@@ -41,6 +39,31 @@ USECOLS = [
 
 TOD_OPTIONS = ["Morning (6–12)", "Afternoon (12–18)", "Evening (18–24)", "Night (0–6)"]
 
+# -----------------------------
+# Crime grouping (point colors)
+# -----------------------------
+GROUP_COLORS = {
+    "Violent": "#d62728",      # red
+    "Theft": "#ff7f0e",        # orange
+    "Nonviolent": "#1f77b4",   # blue
+}
+
+def crime_group_from_type(t: str) -> str:
+    s = str(t).lower()
+    violent_kw = [
+        "assault", "robbery", "homicide", "sexual", "rape", "kidnap",
+        "weapon", "shoot", "stab", "violence", "murder"
+    ]
+    theft_kw = [
+        "theft", "break and enter", "b&e", "burglary",
+        "stolen", "shoplift", "larceny",
+        "vehicle theft", "theft of vehicle", "theft from vehicle"
+    ]
+    if any(k in s for k in violent_kw):
+        return "Violent"
+    if any(k in s for k in theft_kw):
+        return "Theft"
+    return "Nonviolent"
 
 # -----------------------------
 # Data load + prep
@@ -68,13 +91,15 @@ def load_data(path: str, nrows: int | None = None) -> pd.DataFrame:
     df["TIME_OF_DAY"] = tod.astype("string")
 
     df = df.dropna(subset=["YEAR", "TYPE", "NEIGHBOURHOOD", "HOUR", "MONTH"])
-    return df
 
+    # group column for map point coloring
+    df["CRIME_GROUP"] = df["TYPE"].apply(crime_group_from_type).astype("string")
+
+    return df
 
 def load_geojson(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
-
 
 # -----------------------------
 # Filtering
@@ -94,10 +119,16 @@ def filter_df(
         out = out[out["TIME_OF_DAY"].isin(time_of_day)]
     return out
 
-
 # -----------------------------
 # GeoJSON matching helpers
 # -----------------------------
+def normalize_name(s: str) -> str:
+    s = str(s).lower().strip()
+    for ch in [".", ",", "-", "_", "/", "’", "'", "(", ")", "&"]:
+        s = s.replace(ch, " ")
+    s = " ".join(s.split())
+    return s
+
 def _geojson_feature_property_keys(geojson: dict) -> list[str]:
     feats = geojson.get("features", [])
     if not feats:
@@ -105,15 +136,7 @@ def _geojson_feature_property_keys(geojson: dict) -> list[str]:
     props = feats[0].get("properties", {})
     return list(props.keys())
 
-
 def detect_featureidkey_and_mapping(geojson: dict, df_neigh_values: list[str]) -> tuple[str, dict[str, str]]:
-    """
-    Tries common GeoJSON property names and returns:
-      - featureidkey string like "properties.name"
-      - mapping dict from df neighbourhood names -> GeoJSON neighbourhood names (identity if match)
-
-    This makes the prototype resilient if the GeoJSON uses different property keys.
-    """
     candidate_props = [
         "name", "Name", "NAME",
         "local_area", "LOCAL_AREA", "LocalArea",
@@ -123,13 +146,11 @@ def detect_featureidkey_and_mapping(geojson: dict, df_neigh_values: list[str]) -
 
     prop_keys = _geojson_feature_property_keys(geojson)
     feats = geojson.get("features", [])
+    df_set = set([str(x).strip() for x in df_neigh_values if x is not None])
 
-    # Build GeoJSON name sets for each candidate property
     best_prop = None
     best_overlap = -1
     best_geo_names = None
-
-    df_set = set([str(x).strip() for x in df_neigh_values if x is not None])
 
     for prop in candidate_props:
         if prop not in prop_keys:
@@ -139,23 +160,18 @@ def detect_featureidkey_and_mapping(geojson: dict, df_neigh_values: list[str]) -
             v = ft.get("properties", {}).get(prop)
             if v is not None:
                 geo_names.add(str(v).strip())
-
         overlap = len(df_set.intersection(geo_names))
         if overlap > best_overlap:
             best_overlap = overlap
             best_prop = prop
             best_geo_names = geo_names
 
-    # If none matched, fall back to first property key (still works if user adjusts mapping later)
     if best_prop is None:
         if not prop_keys:
-            # No properties at all — extremely unlikely, but guard anyway
             return "properties.name", {}
         best_prop = prop_keys[0]
         best_geo_names = set(str(ft.get("properties", {}).get(best_prop, "")).strip() for ft in feats)
 
-    # Mapping: for prototype, try identity + simple normalization
-    # If you later find mismatches, add explicit rules to this mapping.
     mapping: dict[str, str] = {}
     geo_list = list(best_geo_names or [])
     geo_norm = {normalize_name(g): g for g in geo_list}
@@ -164,68 +180,18 @@ def detect_featureidkey_and_mapping(geojson: dict, df_neigh_values: list[str]) -
         nn = normalize_name(n)
         if nn in geo_norm:
             mapping[n] = geo_norm[nn]
-        else:
-            # leave unmapped — it just won't appear on choropleth
-            pass
 
     featureidkey = f"properties.{best_prop}"
     return featureidkey, mapping
 
-
-def normalize_name(s: str) -> str:
-    # lower, remove punctuation-ish, collapse spaces
-    s = s.lower().strip()
-    for ch in [".", ",", "-", "_", "/", "’", "'", "(", ")", "&"]:
-        s = s.replace(ch, " ")
-    s = " ".join(s.split())
-    return s
-
-
-# -----------------------------
-# Summary + charts
-# -----------------------------
-def clicked_neighbourhood(click_data: dict | None) -> str | None:
-    """
-    For choropleth polygons, clickData points often include:
-      point["location"] = the value from locations=
-    """
+def clicked_neighbourhood_from_polygon(click_data: dict | None, name_mapping: dict[str, str]) -> str | None:
     if not click_data or "points" not in click_data or not click_data["points"]:
         return None
-    return click_data["points"][0].get("location")
-
-
-def make_summary(df_filt: pd.DataFrame, selected_neigh: str | None) -> dict:
-    d = df_filt
-    selected_area_label = "All neighbourhoods"
-
-    if selected_neigh:
-        d = d[d["NEIGHBOURHOOD"] == selected_neigh]
-        selected_area_label = selected_neigh
-
-    total = int(len(d))
-
-    if total > 0:
-        peak_hour = d["HOUR"].value_counts().idxmax()
-        peak_hour_str = f"{int(peak_hour):02d}:00–{(int(peak_hour) + 1) % 24:02d}:00"
-        top_type = str(d["TYPE"].value_counts().idxmax())
-    else:
-        peak_hour_str = "—"
-        top_type = "—"
-
-    return {
-        "selected_area": selected_area_label,
-        "total_incidents": total,
-        "peak_hour": peak_hour_str,
-        "top_type": top_type,
-    }
-
-
-def neighbourhood_counts(df_filt: pd.DataFrame) -> pd.DataFrame:
-    return (
-        df_filt.groupby("NEIGHBOURHOOD", as_index=False)
-        .size()
-        .rename(columns={"size": "incidents"})
-    )
+    pt = click_data["points"][0]
+    if "location" not in pt:
+        return None
+    reverse_map = {v: k for k, v in name_mapping.items()}
+    return reverse_map.get(pt["location"])
 
 def get_feature_bounds(
     geojson: dict,
@@ -235,14 +201,7 @@ def get_feature_bounds(
     map_height_px: int = 420,
     padding: float = 0.85,
 ):
-    """
-    Returns (center, zoom) so the polygon fits within the map viewport.
-
-    map_width_px / map_height_px should roughly match your dcc.Graph size.
-    padding < 1 adds margins so the polygon isn't flush to edges.
-    """
     prop_key = featureidkey.split(".")[-1]
-
     for ft in geojson.get("features", []):
         if str(ft.get("properties", {}).get(prop_key)) == str(feature_name):
             geom = ft.get("geometry", {})
@@ -258,46 +217,111 @@ def get_feature_bounds(
                             coords.extend(ring)
 
             extract_coords(geom)
-
             if not coords:
                 return None
 
             lons = [c[0] for c in coords]
             lats = [c[1] for c in coords]
-
             min_lon, max_lon = min(lons), max(lons)
             min_lat, max_lat = min(lats), max(lats)
 
-            center = {
-                "lon": (min_lon + max_lon) / 2,
-                "lat": (min_lat + max_lat) / 2,
-            }
+            center = {"lon": (min_lon + max_lon) / 2, "lat": (min_lat + max_lat) / 2}
 
-            # --- spans in degrees ---
             lon_span = max(max_lon - min_lon, 1e-9)
             lat_span = max(max_lat - min_lat, 1e-9)
 
-            # Adjust longitude span for latitude distortion (Mercator)
             lat_rad = math.radians(center["lat"])
             lon_span_adj = lon_span * math.cos(lat_rad)
 
-            # World size in pixels at zoom 0 (Mapbox/Web Mercator)
             WORLD_SIZE = 512
-
-            # Compute zoom to fit width and height separately
             zoom_x = math.log2((map_width_px * padding * 360) / (lon_span_adj * WORLD_SIZE))
             zoom_y = math.log2((map_height_px * padding * 360) / (lat_span * WORLD_SIZE))
-
-            # Choose smaller zoom so BOTH dimensions fit
             zoom = min(zoom_x, zoom_y)
-
-            # Clamp to reasonable bounds
             zoom = max(9.5, min(15, zoom))
 
             return center, zoom
-
     return None
 
+# -----------------------------
+# Summary + charts
+# -----------------------------
+def make_summary(df_filt: pd.DataFrame, selected_neigh: str | None) -> dict:
+    d = df_filt
+    selected_area_label = "All neighbourhoods"
+    if selected_neigh:
+        d = d[d["NEIGHBOURHOOD"] == selected_neigh]
+        selected_area_label = selected_neigh
+
+    total = int(len(d))
+    if total > 0:
+        peak_hour = d["HOUR"].value_counts().idxmax()
+        peak_hour_str = f"{int(peak_hour):02d}:00–{(int(peak_hour) + 1) % 24:02d}:00"
+        top_type = str(d["TYPE"].value_counts().idxmax())
+    else:
+        peak_hour_str = "—"
+        top_type = "—"
+
+    return {
+        "selected_area": selected_area_label,
+        "total_incidents": total,
+        "peak_hour": peak_hour_str,
+        "top_type": top_type,
+    }
+
+def fig_monthly(df_focus: pd.DataFrame):
+    month_map = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
+    d = df_focus.copy()
+    d["MONTH"] = pd.to_numeric(d["MONTH"], errors="coerce")
+    d = d[d["MONTH"].between(1, 12)]
+    counts = d["MONTH"].value_counts().reindex(range(1, 13), fill_value=0).sort_index()
+    grp = pd.DataFrame({"MONTH": counts.index, "incidents": counts.values, "MONTH_NAME": [month_map[m] for m in counts.index]})
+    fig = px.bar(grp, x="MONTH_NAME", y="incidents",
+                 category_orders={"MONTH_NAME": list(month_map.values())},
+                 title="Monthly trend (# incidents)")
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=300)
+    fig.update_yaxes(title="# incidents")
+    fig.update_xaxes(title="")
+    return fig
+
+def fig_hourly(df_focus: pd.DataFrame):
+    grp = df_focus.groupby("HOUR", as_index=False).size().sort_values("HOUR")
+    fig = px.bar(grp, x="HOUR", y="size", title="Hourly distribution (# incidents)")
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=300)
+    fig.update_yaxes(title="# incidents")
+    fig.update_xaxes(title="Hour of day")
+    return fig
+
+def fig_type_comparison(df_focus: pd.DataFrame):
+    top_types = df_focus["TYPE"].value_counts().head(8).index.tolist()
+    d = df_focus[df_focus["TYPE"].isin(top_types)]
+    grp = d.groupby("TYPE", as_index=False).size().sort_values("size", ascending=True)
+    fig = px.bar(grp, x="size", y="TYPE", orientation="h", title="Crime type comparison (top 8)")
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=300)
+    fig.update_xaxes(title="# incidents")
+    fig.update_yaxes(title="")
+    return fig
+
+def fig_yearly_trend(df_all: pd.DataFrame, types_selected, tod_selected, selected_neigh: str | None):
+    d = filter_df(df_all, year=None, crime_types=types_selected, time_of_day=tod_selected).copy()
+    d = d[(d["YEAR"] >= 2019) & (d["YEAR"] <= 2023)]
+
+    title = "Yearly trend<br>(2019–2023)"
+    if selected_neigh:
+        d = d[d["NEIGHBOURHOOD"] == selected_neigh]
+        title = f"Yearly trend in {selected_neigh}<br>(2019–2023)"
+
+    counts = d.groupby("YEAR").size().reindex(range(2019, 2024), fill_value=0).reset_index(name="incidents")
+    fig = px.line(counts, x="YEAR", y="incidents", markers=True, title=title)
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=280)
+    fig.update_yaxes(title="# incidents")
+    fig.update_xaxes(title="Year", dtick=1)
+    return fig
+
+# -----------------------------
+# Map figure (choropleth or zoomed points)
+#   - Choropleth: no legend
+#   - Zoomed points: legend visible
+# -----------------------------
 def fig_neighbourhood_map(
     df_filt: pd.DataFrame,
     geojson: dict,
@@ -308,7 +332,6 @@ def fig_neighbourhood_map(
     map_center = {"lat": 49.2827, "lon": -123.1207}
     map_zoom = 11
 
-    # ---- ZOOMED VIEW: show incident points + boundary ----
     if selected_neigh and selected_neigh in name_mapping:
         selected_geo = name_mapping[selected_neigh]
         bounds = get_feature_bounds(geojson, featureidkey, selected_geo)
@@ -317,12 +340,10 @@ def fig_neighbourhood_map(
 
         df_points = df_filt[df_filt["NEIGHBOURHOOD"] == selected_neigh].copy()
 
-        # Ensure numeric coords
         df_points["X"] = pd.to_numeric(df_points["X"], errors="coerce")
         df_points["Y"] = pd.to_numeric(df_points["Y"], errors="coerce")
         df_points = df_points.dropna(subset=["X", "Y"])
 
-        # Convert UTM → lat/lon if needed
         if not df_points.empty:
             if df_points["X"].mean() > 1000:
                 transformer = Transformer.from_crs("EPSG:26910", "EPSG:4326", always_xy=True)
@@ -333,8 +354,6 @@ def fig_neighbourhood_map(
                 df_points["lon"] = df_points["X"]
                 df_points["lat"] = df_points["Y"]
 
-        # Create readable datetime
-        if not df_points.empty:
             df_points["DATETIME_STR"] = (
                 df_points["YEAR"].astype(str) + "-" +
                 df_points["MONTH"].astype(str).str.zfill(2) + "-" +
@@ -343,13 +362,15 @@ def fig_neighbourhood_map(
                 df_points["MINUTE"].astype(str).str.zfill(2)
             )
 
-        # Base scatter figure
         fig = px.scatter_mapbox(
             df_points,
             lat="lat",
             lon="lon",
+            color="CRIME_GROUP",
+            color_discrete_map=GROUP_COLORS,
             hover_name="TYPE",
             hover_data={
+                "CRIME_GROUP": True,
                 "DATETIME_STR": True,
                 "HUNDRED_BLOCK": True,
                 "lat": False,
@@ -361,17 +382,16 @@ def fig_neighbourhood_map(
             title=f"Incidents in {selected_neigh}",
             height=420,
         )
+        fig.update_traces(marker=dict(size=10, opacity=0.85))
 
-        fig.update_traces(marker=dict(size=10, color="red", opacity=0.85))
-
-        # ---- Draw neighbourhood boundary using line trace ----
+        # neighbourhood boundary line
         prop_key = featureidkey.split(".")[-1]
         for ft in geojson.get("features", []):
             if str(ft.get("properties", {}).get(prop_key)) == str(selected_geo):
                 geom = ft.get("geometry", {})
-                if geom["type"] == "Polygon":
+                if geom.get("type") == "Polygon":
                     polygons = [geom["coordinates"]]
-                elif geom["type"] == "MultiPolygon":
+                elif geom.get("type") == "MultiPolygon":
                     polygons = geom["coordinates"]
                 else:
                     polygons = []
@@ -380,26 +400,17 @@ def fig_neighbourhood_map(
                     for ring in poly:
                         lons = [pt[0] for pt in ring]
                         lats = [pt[1] for pt in ring]
-
                         fig.add_trace(go.Scattermapbox(
-                            lon=lons,
-                            lat=lats,
-                            mode="lines",
+                            lon=lons, lat=lats, mode="lines",
                             line=dict(width=3, color="black"),
-                            hoverinfo="skip",
-                            showlegend=False,
+                            hoverinfo="skip", showlegend=False
                         ))
 
-        fig.update_layout(margin=dict(l=10, r=10, t=50, b=10))
+        fig.update_layout(margin=dict(l=10, r=10, t=55, b=10))
         return fig
 
-    # ---- DEFAULT: choropleth heatmap ----
-    counts = (
-        df_filt.groupby("NEIGHBOURHOOD", as_index=False)
-        .size()
-        .rename(columns={"size": "incidents"})
-    )
-
+    # ---- DEFAULT: choropleth heatmap (no legend) ----
+    counts = df_filt.groupby("NEIGHBOURHOOD", as_index=False).size().rename(columns={"size": "incidents"})
     counts["NEIGH_GEO"] = counts["NEIGHBOURHOOD"].map(name_mapping)
     counts = counts.dropna(subset=["NEIGH_GEO"])
 
@@ -419,78 +430,42 @@ def fig_neighbourhood_map(
         height=420,
     )
 
-    fig.update_layout(margin=dict(l=10, r=10, t=50, b=10))
+    fig.update_layout(margin=dict(l=10, r=10, t=55, b=10))
     return fig
 
+# -----------------------------
+# Crime type checklist options
+#   - plain (no dots): used when NOT zoomed
+#   - dotted: used when zoomed
+# -----------------------------
+def make_type_options_plain(types_list: list[str]):
+    return [{"label": str(t), "value": t} for t in types_list]
 
-def fig_monthly(df_focus: pd.DataFrame):
-    month_map = {
-        1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr",
-        5: "May", 6: "Jun", 7: "Jul", 8: "Aug",
-        9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"
-    }
+def make_type_options_dotted(types_list: list[str]):
+    opts = []
+    for t in types_list:
+        grp = crime_group_from_type(t)
+        dot_color = GROUP_COLORS.get(grp, "#999")
 
-    d = df_focus.copy()
-
-    # Ensure numeric months
-    d["MONTH"] = pd.to_numeric(d["MONTH"], errors="coerce")
-    d = d[d["MONTH"].between(1, 12)]
-
-    # Count incidents per month and force all months 1–12
-    counts = (
-        d["MONTH"]
-        .value_counts()
-        .reindex(range(1, 13), fill_value=0)
-        .sort_index()
-    )
-
-    grp = pd.DataFrame({
-        "MONTH": counts.index,
-        "incidents": counts.values,
-        "MONTH_NAME": [month_map[m] for m in counts.index],
-    })
-
-    fig = px.bar(
-        grp,
-        x="MONTH_NAME",
-        y="incidents",
-        category_orders={"MONTH_NAME": list(month_map.values())},
-        title="Monthly trend (# incidents)",
-    )
-
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
-    fig.update_yaxes(title="# incidents")
-    fig.update_xaxes(title="")
-    return fig
-
-
-def fig_hourly(df_focus: pd.DataFrame):
-    grp = (
-        df_focus.groupby("HOUR", as_index=False)
-        .size()
-        .sort_values("HOUR")
-    )
-    fig = px.bar(grp, x="HOUR", y="size", title="Hourly distribution (# incidents)")
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
-    fig.update_yaxes(title="# incidents")
-    fig.update_xaxes(title="Hour of day")
-    return fig
-
-
-def fig_type_comparison(df_focus: pd.DataFrame):
-    top_types = df_focus["TYPE"].value_counts().head(8).index.tolist()
-    d = df_focus[df_focus["TYPE"].isin(top_types)]
-    grp = (
-        d.groupby("TYPE", as_index=False)
-        .size()
-        .sort_values("size", ascending=True)
-    )
-    fig = px.bar(grp, x="size", y="TYPE", orientation="h", title="Crime type comparison (top 8)")
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
-    fig.update_xaxes(title="# incidents")
-    fig.update_yaxes(title="")
-    return fig
-
+        label = html.Span(
+            [
+                html.Span(str(t)),
+                html.Span(
+                    style={
+                        "display": "inline-block",
+                        "width": "10px",
+                        "height": "10px",
+                        "marginLeft": "8px",
+                        "borderRadius": "50%",
+                        "backgroundColor": dot_color,
+                        "flex": "0 0 auto",
+                    }
+                ),
+            ],
+            style={"display": "flex", "alignItems": "center"},
+        )
+        opts.append({"label": label, "value": t})
+    return opts
 
 # -----------------------------
 # Initialize
@@ -500,10 +475,8 @@ geo = load_geojson(GEOJSON_PATH)
 
 years = sorted(df_all["YEAR"].dropna().astype(int).unique().tolist())
 crime_types_all = sorted(df_all["TYPE"].dropna().unique().tolist())
-
 default_year = max(years) if years else None
 
-# Detect how to match NEIGHBOURHOOD labels to GeoJSON polygons
 featureidkey, name_mapping = detect_featureidkey_and_mapping(
     geojson=geo,
     df_neigh_values=sorted(df_all["NEIGHBOURHOOD"].dropna().unique().tolist())[:500],
@@ -516,16 +489,30 @@ app = Dash(__name__)
 server = app.server
 
 app.layout = html.Div(
-    style={"fontFamily": "Arial", "backgroundColor": "#F7F7F7", "padding": "10px"},
+    style={
+        "fontFamily": "Arial",
+        "backgroundColor": "#F7F7F7",
+        "padding": "10px",
+        "height": "100vh",
+        "boxSizing": "border-box",
+        "overflow": "hidden",
+    },
     children=[
-        html.H2("Vancouver Crime Patterns Dashboard", style={"textAlign": "center"}),
-
+        dcc.Store(id="selected_neigh_store", data=None),
+        html.H2("Vancouver Crime Patterns Dashboard", style={"textAlign": "center", "margin": "6px 0"}),
         html.Div(
-            style={"display": "flex", "gap": "12px"},
+            style={"display": "flex", "gap": "12px", "height": "calc(100vh - 60px)", "overflow": "hidden"},
             children=[
                 # Left controls
                 html.Div(
-                    style={"flex": "1", "backgroundColor": "white", "padding": "12px", "borderRadius": "10px"},
+                    style={
+                        "flex": "1",
+                        "backgroundColor": "white",
+                        "padding": "12px",
+                        "borderRadius": "10px",
+                        "height": "100%",
+                        "overflowY": "auto",
+                    },
                     children=[
                         html.H4("FILTER CRIME DATA"),
 
@@ -541,7 +528,7 @@ app.layout = html.Div(
                         html.Label("Crime Type Filter"),
                         dcc.Checklist(
                             id="type_checklist",
-                            options=[{"label": t, "value": t} for t in crime_types_all],
+                            options=make_type_options_plain(crime_types_all),
                             value=crime_types_all[:4],
                             inputStyle={"marginRight": "8px"},
                         ),
@@ -572,14 +559,25 @@ app.layout = html.Div(
 
                 # Center: map + charts
                 html.Div(
-                    style={"flex": "2.2", "backgroundColor": "white", "padding": "12px", "borderRadius": "10px"},
+                    style={
+                        "flex": "3",
+                        "backgroundColor": "white",
+                        "padding": "12px",
+                        "borderRadius": "10px",
+                        "height": "100%",
+                        "minHeight": "0",
+                        "overflowY": "auto",
+                        "overflowX": "hidden",
+                        "display": "flex",
+                        "flexDirection": "column",
+                        "gap": "10px",
+                    },
                     children=[
-                        # Reset / zoom-out button
                         html.Button(
                             "Back",
                             id="reset_map_btn",
                             n_clicks=0,
-                            style={"display": "none", "marginBottom": "8px"}  # hidden initially
+                            style={"display": "none", "marginBottom": "0px"}
                         ),
 
                         dcc.Graph(
@@ -591,16 +589,20 @@ app.layout = html.Div(
                                 name_mapping=name_mapping,
                                 selected_neigh=None,
                             ),
-                            style={"height": "420px"},
-                            config={"displayModeBar": True},
+                            style={"height": "420px", "width": "100%"},
+                            config={"displayModeBar": True, "responsive": True},
                         ),
 
                         html.Div(
-                            style={"display": "flex", "gap": "10px"},
+                            style={
+                                "display": "flex",
+                                "gap": "10px",
+                                "flexWrap": "wrap",
+                            },
                             children=[
-                                html.Div(style={"flex": "1"}, children=[dcc.Graph(id="monthly_graph")]),
-                                html.Div(style={"flex": "1"}, children=[dcc.Graph(id="hourly_graph")]),
-                                html.Div(style={"flex": "1"}, children=[dcc.Graph(id="type_graph")]),
+                                html.Div(style={"flex": "1 1 320px"}, children=[dcc.Graph(id="monthly_graph", config={"displayModeBar": False})]),
+                                html.Div(style={"flex": "1 1 320px"}, children=[dcc.Graph(id="hourly_graph", config={"displayModeBar": False})]),
+                                html.Div(style={"flex": "1 1 320px"}, children=[dcc.Graph(id="type_graph", config={"displayModeBar": False})]),
                             ],
                         ),
                     ],
@@ -608,7 +610,14 @@ app.layout = html.Div(
 
                 # Right summary
                 html.Div(
-                    style={"flex": "1", "backgroundColor": "white", "padding": "12px", "borderRadius": "10px"},
+                    style={
+                        "flex": "1",
+                        "backgroundColor": "white",
+                        "padding": "12px",
+                        "borderRadius": "10px",
+                        "height": "100%",
+                        "overflowY": "auto",
+                    },
                     children=[
                         html.H4("INCIDENT SUMMARY"),
                         html.Div(id="summary_year", style={"fontSize": "18px", "fontWeight": "bold"}),
@@ -626,7 +635,10 @@ app.layout = html.Div(
                         html.Div(
                             style={"fontSize": "12px", "color": "#555"},
                             children="Tip: Click a neighbourhood polygon to filter the charts."
-                        )
+                        ),
+
+                        html.Hr(),
+                        dcc.Graph(id="yearly_trend_graph", config={"displayModeBar": False}),
                     ],
                 ),
             ],
@@ -634,8 +646,9 @@ app.layout = html.Div(
     ],
 )
 
-
+# -----------------------------
 # Reset filters callback
+# -----------------------------
 @app.callback(
     Output("year_dropdown", "value"),
     Output("type_checklist", "value"),
@@ -646,8 +659,49 @@ app.layout = html.Div(
 def reset_filters(_n):
     return default_year, crime_types_all[:4], TOD_OPTIONS
 
+# -----------------------------
+# Store selected neighbourhood (persists while filters change)
+# -----------------------------
+@app.callback(
+    Output("selected_neigh_store", "data"),
+    Input("map_graph", "clickData"),
+    Input("reset_map_btn", "n_clicks"),
+    State("selected_neigh_store", "data"),
+)
 
+def update_selected_neigh(clickData, reset_clicks, current_selected):
+    ctx = callback_context
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
+
+    if trigger == "reset_map_btn":
+        return None
+
+    if trigger == "map_graph":
+        clicked = clicked_neighbourhood_from_polygon(clickData, name_mapping)
+        if clicked:
+            return clicked
+
+    return current_selected
+
+# -----------------------------
+# Toggle type checklist dot display:
+#   - not zoomed (no selected_neigh) -> plain
+#   - zoomed (selected_neigh) -> dotted
+# -----------------------------
+@app.callback(
+    Output("type_checklist", "options"),
+    Input("selected_neigh_store", "data"),
+)
+
+def toggle_type_options(selected_neigh):
+    if not selected_neigh:
+        return make_type_options_plain(crime_types_all)
+    return make_type_options_dotted(crime_types_all)
+
+
+# -----------------------------
 # Main update callback
+# -----------------------------
 @app.callback(
     Output("map_graph", "figure"),
     Output("monthly_graph", "figure"),
@@ -662,38 +716,13 @@ def reset_filters(_n):
     Input("year_dropdown", "value"),
     Input("type_checklist", "value"),
     Input("tod_checklist", "value"),
-    Input("map_graph", "clickData"),
-    Input("reset_map_btn", "n_clicks"),
+    Input("selected_neigh_store", "data"),
 )
 
-def update_dashboard(year, types_selected, tod_selected, clickData, reset_clicks):
+def update_dashboard(year, types_selected, tod_selected, selected_neigh):
     df_f = filter_df(df_all, year, types_selected, tod_selected)
-
-    ctx = callback_context
-    trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
-
-    selected_neigh = None
-
-    # If reset button triggered → zoom out
-    if trigger == "reset_map_btn":
-        selected_neigh = None
-
-    # If map clicked → only respond to polygon clicks
-    elif trigger == "map_graph" and clickData and "points" in clickData and clickData["points"]:
-        pt = clickData["points"][0]
-
-        if "location" in pt:
-            # Polygon clicked → zoom in
-            reverse_map = {v: k for k, v in name_mapping.items()}
-            selected_neigh = reverse_map.get(pt["location"])
-        else:
-            # Point clicked → do nothing (stay zoomed in)
-            selected_neigh = None  # or keep previous state if you later store it
-
-    # Focus dataframe
     df_focus = df_f if not selected_neigh else df_f[df_f["NEIGHBOURHOOD"] == selected_neigh]
 
-    # Map figure
     map_fig = fig_neighbourhood_map(
         df_f,
         geojson=geo,
@@ -702,21 +731,19 @@ def update_dashboard(year, types_selected, tod_selected, clickData, reset_clicks
         selected_neigh=selected_neigh,
     )
 
-    # Charts
     if len(df_focus):
         m_fig = fig_monthly(df_focus)
         h_fig = fig_hourly(df_focus)
         t_fig = fig_type_comparison(df_focus)
     else:
-        m_fig = px.bar(title="Monthly trend (# incidents)")
-        h_fig = px.bar(title="Hourly distribution (# incidents)")
-        t_fig = px.bar(title="Crime type comparison (top 8)")
+        m_fig = px.bar(title="Monthly trend (# incidents)"); m_fig.update_layout(height=300)
+        h_fig = px.bar(title="Hourly distribution (# incidents)"); h_fig.update_layout(height=300)
+        t_fig = px.bar(title="Crime type comparison (top 8)"); t_fig.update_layout(height=300)
 
     summ = make_summary(df_f, selected_neigh)
     summ_year = f"Year: {year}" if year is not None else "Year: —"
 
-    # Show button only when zoomed in
-    btn_style = {"marginBottom": "8px", "display": "block"} if selected_neigh else {"display": "none"}
+    btn_style = {"display": "block"} if selected_neigh else {"display": "none"}
 
     return (
         map_fig, m_fig, h_fig, t_fig,
@@ -728,7 +755,18 @@ def update_dashboard(year, types_selected, tod_selected, clickData, reset_clicks
         btn_style,
     )
 
+# -----------------------------
+# Yearly trend callback (2019–2023)
+# -----------------------------
+@app.callback(
+    Output("yearly_trend_graph", "figure"),
+    Input("type_checklist", "value"),
+    Input("tod_checklist", "value"),
+    Input("selected_neigh_store", "data"),
+)
+
+def update_yearly(types_selected, tod_selected, selected_neigh):
+    return fig_yearly_trend(df_all, types_selected, tod_selected, selected_neigh)
 
 if __name__ == "__main__":
-    # Dash v3+: use app.run (run_server is deprecated)
     app.run(debug=True)
