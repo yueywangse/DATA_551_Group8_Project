@@ -9,9 +9,9 @@ Behavior requested:
 How to run:
 1) Put your Kaggle CSV at: data/raw/crimes.csv (or change DATA_PATH)
 2) Download a Vancouver neighbourhood/local-area GeoJSON and save to: data/raw/local_areas.geojson
-3) pip install dash plotly pandas numpy pyproj
-4) python src/app.py
-Open: http://127.0.0.1:8050
+3) python -m pip install -r requirements.txt
+4) python3 src/app.py
+Open: http://127.0.0.1:8050 (This will be any link that's generated after you ran the program)
 """
 
 from __future__ import annotations
