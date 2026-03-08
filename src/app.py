@@ -84,6 +84,20 @@ def resolve_data_path(candidates: list[str]) -> str:
 
 def load_data(path: str, nrows: int | None = None) -> pd.DataFrame:
     df = pd.read_csv(path, nrows=nrows)
+    
+    df["X"] = pd.to_numeric(df["X"], errors="coerce")
+    df["Y"] = pd.to_numeric(df["Y"], errors="coerce")
+
+    transformer = Transformer.from_crs("EPSG:26910", "EPSG:4326", always_xy=True)
+
+    mask = df["X"] > 1000
+    lons, lats = transformer.transform(df.loc[mask, "X"].values, df.loc[mask, "Y"].values)
+
+    df.loc[mask, "lon"] = lons
+    df.loc[mask, "lat"] = lats
+
+    df.loc[~mask, "lon"] = df.loc[~mask, "X"]
+    df.loc[~mask, "lat"] = df.loc[~mask, "Y"]
 
     missing_cols = [c for c in REQUIRED_COLS if c not in df.columns]
     if missing_cols:
@@ -418,19 +432,9 @@ def fig_neighbourhood_map(
 
         df_points = df_filt[df_filt["NEIGHBOURHOOD"] == selected_neigh].copy()
 
-        df_points["X"] = pd.to_numeric(df_points["X"], errors="coerce")
-        df_points["Y"] = pd.to_numeric(df_points["Y"], errors="coerce")
-        df_points = df_points.dropna(subset=["X", "Y"])
+        df_points = df_points.dropna(subset=["lon", "lat"])
 
         if not df_points.empty:
-            if df_points["X"].mean() > 1000:
-                transformer = Transformer.from_crs("EPSG:26910", "EPSG:4326", always_xy=True)
-                lons, lats = transformer.transform(df_points["X"].values, df_points["Y"].values)
-                df_points["lon"] = lons
-                df_points["lat"] = lats
-            else:
-                df_points["lon"] = df_points["X"]
-                df_points["lat"] = df_points["Y"]
 
             df_points["DATETIME_STR"] = (
                 df_points["YEAR"].astype(str) + "-" +
@@ -444,6 +448,9 @@ def fig_neighbourhood_map(
         df_points["Category"] = df_points["CRIME_GROUP"]
         df_points["Date & time"] = df_points["DATETIME_STR"]
         df_points["Block"] = df_points["HUNDRED_BLOCK"]
+        
+        if len(df_points) > 3000:
+            df_points = df_points.sample(3000, random_state=1)
 
         fig = px.scatter_mapbox(
             df_points,
