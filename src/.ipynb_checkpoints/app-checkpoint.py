@@ -9,13 +9,14 @@ Behavior requested:
 How to run:
 1) Put your Kaggle CSV at: data/raw/crimes.csv (or change DATA_PATH)
 2) Download a Vancouver neighbourhood/local-area GeoJSON and save to: data/raw/local_areas.geojson
-3) pip install dash plotly pandas numpy pyproj
-4) python src/app.py
-Open: http://127.0.0.1:8050
+3) python -m pip install -r requirements.txt
+4) python3 src/app.py
+Open: http://127.0.0.1:8050 (This will be any link that's generated after you ran the program)
 """
 
 from __future__ import annotations
 
+import os
 import json
 import math
 import pandas as pd
@@ -28,11 +29,16 @@ from pyproj import Transformer
 # -----------------------------
 # Config
 # -----------------------------
-DATA_PATH = "data/raw/crimes.csv"
+DATA_CANDIDATE_PATHS = [
+    "crimedata_FE.csv",
+    "data/raw/crimes.csv",
+]
 GEOJSON_PATH = "data/raw/local_areas.geojson"
-DEV_NROWS = None
+#DEV_NROWS = None
 
-USECOLS = [
+DEV_NROWS = 200000
+
+REQUIRED_COLS = [
     "TYPE", "YEAR", "MONTH", "DAY", "HOUR", "MINUTE",
     "HUNDRED_BLOCK", "NEIGHBOURHOOD", "X", "Y",
 ]
@@ -68,8 +74,36 @@ def crime_group_from_type(t: str) -> str:
 # -----------------------------
 # Data load + prep
 # -----------------------------
+def resolve_data_path(candidates: list[str]) -> str:
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    raise FileNotFoundError(
+        f"Could not find a crime CSV in any of these paths: {candidates}"
+    )
+
 def load_data(path: str, nrows: int | None = None) -> pd.DataFrame:
-    df = pd.read_csv(path, usecols=USECOLS, nrows=nrows)
+    df = pd.read_csv(path, nrows=nrows)
+    
+    df["X"] = pd.to_numeric(df["X"], errors="coerce")
+    df["Y"] = pd.to_numeric(df["Y"], errors="coerce")
+
+    transformer = Transformer.from_crs("EPSG:26910", "EPSG:4326", always_xy=True)
+
+    mask = df["X"] > 1000
+    lons, lats = transformer.transform(df.loc[mask, "X"].values, df.loc[mask, "Y"].values)
+
+    df.loc[mask, "lon"] = lons
+    df.loc[mask, "lat"] = lats
+
+    df.loc[~mask, "lon"] = df.loc[~mask, "X"]
+    df.loc[~mask, "lat"] = df.loc[~mask, "Y"]
+
+    missing_cols = [c for c in REQUIRED_COLS if c not in df.columns]
+    if missing_cols:
+        raise ValueError(
+            f"Input CSV is missing required columns for the dashboard: {missing_cols}"
+        )
 
     df["TYPE"] = df["TYPE"].astype("string")
     df["NEIGHBOURHOOD"] = df["NEIGHBOURHOOD"].astype("string")
@@ -301,6 +335,64 @@ def fig_type_comparison(df_focus: pd.DataFrame):
     fig.update_yaxes(title="")
     return fig
 
+def fig_monthly_pct_change(df_focus: pd.DataFrame, selected_neigh: str | None):
+    d = df_focus.copy()
+
+    if "year_month" in d.columns and "pct_change_vs_prev_month" in d.columns:
+        d["year_month"] = pd.to_datetime(d["year_month"].astype("string") + "-01", errors="coerce")
+        d["pct_change_vs_prev_month"] = pd.to_numeric(d["pct_change_vs_prev_month"], errors="coerce")
+
+        plot_df = (
+            d[["NEIGHBOURHOOD", "year_month", "pct_change_vs_prev_month"]]
+            .dropna(subset=["NEIGHBOURHOOD", "year_month", "pct_change_vs_prev_month"])
+            .drop_duplicates(subset=["NEIGHBOURHOOD", "year_month"])
+            .sort_values(["NEIGHBOURHOOD", "year_month"])
+        )
+    else:
+        grp = (
+            d.dropna(subset=["YEAR", "MONTH", "NEIGHBOURHOOD"])
+            .groupby(["NEIGHBOURHOOD", "YEAR", "MONTH"], as_index=False)
+            .size()
+            .rename(columns={"size": "incidents"})
+            .sort_values(["NEIGHBOURHOOD", "YEAR", "MONTH"])
+        )
+        grp["pct_change_vs_prev_month"] = grp.groupby("NEIGHBOURHOOD")["incidents"].pct_change()
+        grp["year_month"] = pd.to_datetime(
+            dict(year=grp["YEAR"].astype(int), month=grp["MONTH"].astype(int), day=1),
+            errors="coerce",
+        )
+        plot_df = grp[["NEIGHBOURHOOD", "year_month", "pct_change_vs_prev_month"]].dropna(
+            subset=["NEIGHBOURHOOD", "year_month", "pct_change_vs_prev_month"]
+        )
+
+    if selected_neigh:
+        plot_df = plot_df[plot_df["NEIGHBOURHOOD"] == selected_neigh]
+        title = f"Monthly Percent Change Volatility ({selected_neigh})"
+    else:
+        top_neigh = d["NEIGHBOURHOOD"].value_counts().head(8).index.tolist()
+        plot_df = plot_df[plot_df["NEIGHBOURHOOD"].isin(top_neigh)]
+        title = "Monthly Percent Change Volatility (Top 8 Neighbourhoods)"
+
+    if plot_df.empty:
+        fig = px.line(title=title)
+        fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=400)
+        fig.update_yaxes(title="% Change", tickformat=".0%")
+        fig.update_xaxes(title="Year-Month")
+        return fig
+
+    fig = px.line(
+        plot_df.sort_values("year_month"),
+        x="year_month",
+        y="pct_change_vs_prev_month",
+        color="NEIGHBOURHOOD",
+        markers=True,
+        title=title,
+    )
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=400)
+    fig.update_yaxes(title="% Change", tickformat=".0%")
+    fig.update_xaxes(title="Year-Month")
+    return fig
+
 def fig_yearly_trend(df_all: pd.DataFrame, types_selected, tod_selected, selected_neigh: str | None):
     d = filter_df(df_all, year=None, crime_types=types_selected, time_of_day=tod_selected).copy()
     d = d[(d["YEAR"] >= 2019) & (d["YEAR"] <= 2023)]
@@ -340,19 +432,9 @@ def fig_neighbourhood_map(
 
         df_points = df_filt[df_filt["NEIGHBOURHOOD"] == selected_neigh].copy()
 
-        df_points["X"] = pd.to_numeric(df_points["X"], errors="coerce")
-        df_points["Y"] = pd.to_numeric(df_points["Y"], errors="coerce")
-        df_points = df_points.dropna(subset=["X", "Y"])
+        df_points = df_points.dropna(subset=["lon", "lat"])
 
         if not df_points.empty:
-            if df_points["X"].mean() > 1000:
-                transformer = Transformer.from_crs("EPSG:26910", "EPSG:4326", always_xy=True)
-                lons, lats = transformer.transform(df_points["X"].values, df_points["Y"].values)
-                df_points["lon"] = lons
-                df_points["lat"] = lats
-            else:
-                df_points["lon"] = df_points["X"]
-                df_points["lat"] = df_points["Y"]
 
             df_points["DATETIME_STR"] = (
                 df_points["YEAR"].astype(str) + "-" +
@@ -361,6 +443,14 @@ def fig_neighbourhood_map(
                 df_points["HOUR"].astype(str).str.zfill(2) + ":" +
                 df_points["MINUTE"].astype(str).str.zfill(2)
             )
+        
+        df_points["Crime type"] = df_points["TYPE"]
+        df_points["Category"] = df_points["CRIME_GROUP"]
+        df_points["Date & time"] = df_points["DATETIME_STR"]
+        df_points["Block"] = df_points["HUNDRED_BLOCK"]
+        
+        if len(df_points) > 3000:
+            df_points = df_points.sample(3000, random_state=1)
 
         fig = px.scatter_mapbox(
             df_points,
@@ -368,21 +458,28 @@ def fig_neighbourhood_map(
             lon="lon",
             color="CRIME_GROUP",
             color_discrete_map=GROUP_COLORS,
-            hover_name="TYPE",
+            
+            hover_name="Crime type",
+            
             hover_data={
-                "CRIME_GROUP": True,
-                "DATETIME_STR": True,
-                "HUNDRED_BLOCK": True,
+                "Category": True,
+                "Date & time": True,
+                "Block": True,
+                
+                "CRIME_GROUP": False,
+                "DATETIME_STR": False,
+                "HUNDRED_BLOCK": False,
+                "TYPE": False,
                 "lat": False,
                 "lon": False,
-            } if not df_points.empty else None,
-            zoom=map_zoom,
-            center=map_center,
-            mapbox_style="open-street-map",
-            title=f"Incidents in {selected_neigh}",
-            height=420,
-        )
-        fig.update_traces(marker=dict(size=10, opacity=0.85))
+                } if not df_points.empty else None,
+                
+                zoom=map_zoom,
+                center=map_center,
+                mapbox_style="open-street-map",
+                title=f"Incidents in {selected_neigh}",
+                height=420,
+                )
 
         # neighbourhood boundary line
         prop_key = featureidkey.split(".")[-1]
@@ -470,6 +567,7 @@ def make_type_options_dotted(types_list: list[str]):
 # -----------------------------
 # Initialize
 # -----------------------------
+DATA_PATH = resolve_data_path(DATA_CANDIDATE_PATHS)
 df_all = load_data(DATA_PATH, nrows=DEV_NROWS)
 geo = load_geojson(GEOJSON_PATH)
 
@@ -605,6 +703,12 @@ app.layout = html.Div(
                                 html.Div(style={"flex": "1 1 320px"}, children=[dcc.Graph(id="type_graph", config={"displayModeBar": False})]),
                             ],
                         ),
+                        html.Div(
+                            style={"width": "100%"},
+                            children=[
+                                dcc.Graph(id="monthly_pct_change_graph", config={"displayModeBar": False})
+                            ],
+                        ),
                     ],
                 ),
 
@@ -707,6 +811,7 @@ def toggle_type_options(selected_neigh):
     Output("monthly_graph", "figure"),
     Output("hourly_graph", "figure"),
     Output("type_graph", "figure"),
+    Output("monthly_pct_change_graph", "figure"),
     Output("summary_year", "children"),
     Output("summary_area", "children"),
     Output("summary_total", "children"),
@@ -735,10 +840,12 @@ def update_dashboard(year, types_selected, tod_selected, selected_neigh):
         m_fig = fig_monthly(df_focus)
         h_fig = fig_hourly(df_focus)
         t_fig = fig_type_comparison(df_focus)
+        p_fig = fig_monthly_pct_change(df_focus, selected_neigh)
     else:
         m_fig = px.bar(title="Monthly trend (# incidents)"); m_fig.update_layout(height=300)
         h_fig = px.bar(title="Hourly distribution (# incidents)"); h_fig.update_layout(height=300)
         t_fig = px.bar(title="Crime type comparison (top 8)"); t_fig.update_layout(height=300)
+        p_fig = px.line(title="Monthly Percent Change Volatility (Top 8 Neighbourhoods)"); p_fig.update_layout(height=400)
 
     summ = make_summary(df_f, selected_neigh)
     summ_year = f"Year: {year}" if year is not None else "Year: —"
@@ -746,7 +853,7 @@ def update_dashboard(year, types_selected, tod_selected, selected_neigh):
     btn_style = {"display": "block"} if selected_neigh else {"display": "none"}
 
     return (
-        map_fig, m_fig, h_fig, t_fig,
+        map_fig, m_fig, h_fig, t_fig, p_fig,
         summ_year,
         summ["selected_area"],
         f'{summ["total_incidents"]:,}',
@@ -768,5 +875,9 @@ def update_dashboard(year, types_selected, tod_selected, selected_neigh):
 def update_yearly(types_selected, tod_selected, selected_neigh):
     return fig_yearly_trend(df_all, types_selected, tod_selected, selected_neigh)
 
+# if __name__ == "__main__":
+#     app.run(debug=True)
+
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False, host="0.0.0.0", port=int(os.environ.get("PORT", 8050)))
