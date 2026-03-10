@@ -232,7 +232,7 @@ def get_feature_bounds(
     featureidkey: str,
     feature_name: str,
     map_width_px: int = 800,
-    map_height_px: int = 300,
+    map_height_px: int = 340,
     padding: float = 0.85,
 ):
     prop_key = featureidkey.split(".")[-1]
@@ -396,15 +396,12 @@ def fig_monthly_pct_change(df_focus: pd.DataFrame, selected_neigh: str | None):
 def fig_yearly_trend(df_all: pd.DataFrame, types_selected, tod_selected, selected_neigh: str | None):
     d = filter_df(df_all, year=None, crime_types=types_selected, time_of_day=tod_selected).copy()
     d = d[(d["YEAR"] >= 2019) & (d["YEAR"] <= 2023)]
-
-    title = "Yearly trend<br>(2019–2023)"
     if selected_neigh:
         d = d[d["NEIGHBOURHOOD"] == selected_neigh]
-        title = f"Yearly trend in {selected_neigh}<br>(2019–2023)"
 
     counts = d.groupby("YEAR").size().reindex(range(2019, 2024), fill_value=0).reset_index(name="incidents")
-    fig = px.line(counts, x="YEAR", y="incidents", markers=True, title=title)
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=280)
+    fig = px.line(counts, x="YEAR", y="incidents", markers=True)
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=280)
     fig.update_yaxes(title="# incidents")
     fig.update_xaxes(title="Year", dtick=1)
     return fig
@@ -421,8 +418,8 @@ def fig_neighbourhood_map(
     name_mapping: dict[str, str],
     selected_neigh: str | None,
 ):
-    map_center = {"lat": 49.235, "lon": -123.1207}
-    map_zoom = 9.8
+    map_center = {"lat": 49.243, "lon": -123.1207}
+    map_zoom = 10
 
     if selected_neigh and selected_neigh in name_mapping:
         selected_geo = name_mapping[selected_neigh]
@@ -478,7 +475,7 @@ def fig_neighbourhood_map(
                 center=map_center,
                 mapbox_style="open-street-map",
                 title=f"Incidents in {selected_neigh}",
-                height=300,
+                height=340,
                 )
 
         # neighbourhood boundary line
@@ -524,7 +521,7 @@ def fig_neighbourhood_map(
         hover_name="NEIGH_GEO",
         hover_data={"incidents": True},
         title="Incidents by neighbourhood (click a polygon to zoom & see points)",
-        height=300,
+        height=340,
     )
 
     fig.update_layout(margin=dict(l=10, r=10, t=55, b=10))
@@ -580,6 +577,24 @@ featureidkey, name_mapping = detect_featureidkey_and_mapping(
     df_neigh_values=sorted(df_all["NEIGHBOURHOOD"].dropna().unique().tolist())[:500],
 )
 
+PLOT_BTN_BASE_STYLE = {
+    "flex": "1",
+    "padding": "8px 10px",
+    "border": "1px solid #C8CCD4",
+    "borderRadius": "8px",
+    "backgroundColor": "#F3F4F6",
+    "color": "#1F2937",
+    "fontWeight": "600",
+    "cursor": "pointer",
+}
+
+PLOT_BTN_ACTIVE_STYLE = {
+    **PLOT_BTN_BASE_STYLE,
+    "backgroundColor": "#0B5ED7",
+    "color": "white",
+    "border": "1px solid #0B5ED7",
+}
+
 # -----------------------------
 # App
 # -----------------------------
@@ -602,134 +617,204 @@ app.layout = html.Div(
         html.Div(
             style={"display": "flex", "gap": "10px", "height": "calc(100vh - 56px)", "overflow": "hidden"},
             children=[
-                # Left controls
                 html.Div(
                     style={
-                        "flex": "1",
-                        "backgroundColor": "white",
-                        "padding": "10px",
-                        "borderRadius": "10px",
+                        "flex": "0 0 39%",
                         "height": "100%",
-                        "overflow": "hidden",
-                    },
-                    children=[
-                        html.H4("FILTER CRIME DATA", style={"margin": "0 0 8px 0"}),
-
-                        html.Label("Year"),
-                        dcc.Dropdown(
-                            id="year_dropdown",
-                            options=[{"label": str(y), "value": int(y)} for y in years],
-                            value=default_year,
-                            clearable=False,
-                        ),
-
-                        html.Br(),
-                        html.Label("Crime Type Filter"),
-                        dcc.Dropdown(
-                            id="type_dropdown",
-                            options=[{"label": str(t), "value": t} for t in crime_types_all],
-                            value=crime_types_all[:4],
-                            multi=True,
-                            placeholder="Select crime types",
-                        ),
-
-                        html.Hr(),
-                        html.Label("Time Filter"),
-                        dcc.Dropdown(
-                            id="tod_dropdown",
-                            options=[{"label": t, "value": t} for t in TOD_OPTIONS],
-                            value=TOD_OPTIONS,
-                            multi=True,
-                            placeholder="Select times of day",
-                        ),
-
-                        html.Br(),
-                        html.Button("Reset filters", id="reset_btn", n_clicks=0),
-                    ],
-                ),
-
-                # Center: map + charts
-                html.Div(
-                    style={
-                        "flex": "3",
-                        "backgroundColor": "white",
-                        "padding": "10px",
-                        "borderRadius": "10px",
-                        "height": "100%",
-                        "minHeight": "0",
-                        "overflow": "hidden",
                         "display": "flex",
                         "flexDirection": "column",
                         "gap": "8px",
-                    },
-                    children=[
-                        html.Button(
-                            "Back",
-                            id="reset_map_btn",
-                            n_clicks=0,
-                            style={"display": "none", "marginBottom": "0px"}
-                        ),
-
-                        dcc.Graph(
-                            id="map_graph",
-                            figure=fig_neighbourhood_map(
-                                filter_df(df_all, default_year, crime_types_all[:4], TOD_OPTIONS),
-                                geojson=geo,
-                                featureidkey=featureidkey,
-                                name_mapping=name_mapping,
-                                selected_neigh=None,
-                            ),
-                            style={"height": "300px", "width": "100%"},
-                            config={"displayModeBar": True, "responsive": True},
-                        ),
-
-                        html.Div(
-                            style={
-                                "display": "flex",
-                                "gap": "8px",
-                            },
-                            children=[
-                                html.Button("Monthly", id="plot_btn_monthly", n_clicks=0, style={"flex": "1"}),
-                                html.Button("Hourly", id="plot_btn_hourly", n_clicks=0, style={"flex": "1"}),
-                                html.Button("Crime Type", id="plot_btn_type", n_clicks=0, style={"flex": "1"}),
-                                html.Button("Volatility", id="plot_btn_volatility", n_clicks=0, style={"flex": "1"}),
-                            ],
-                        ),
-                        dcc.Graph(id="main_plot_graph", config={"displayModeBar": False}, style={"height": "260px", "width": "100%"}),
-                    ],
-                ),
-
-                # Right summary
-                html.Div(
-                    style={
-                        "flex": "1",
-                        "backgroundColor": "white",
-                        "padding": "10px",
-                        "borderRadius": "10px",
-                        "height": "100%",
                         "overflow": "hidden",
                     },
                     children=[
-                        html.H4("INCIDENT SUMMARY", style={"margin": "0 0 8px 0"}),
-                        html.Div(id="summary_year", style={"fontSize": "18px", "fontWeight": "bold"}),
-
-                        html.Br(),
-                        html.Div(["Selected Area: ", html.Span(id="summary_area", style={"fontWeight": "bold"})]),
-                        html.Br(),
-                        html.Div(["Total Incidents: ", html.Span(id="summary_total", style={"fontWeight": "bold", "fontSize": "24px"})]),
-                        html.Br(),
-                        html.Div(["Peak Hour: ", html.Span(id="summary_peak", style={"fontWeight": "bold"})]),
-                        html.Br(),
-                        html.Div(["Top Crime Type: ", html.Span(id="summary_top_type", style={"fontWeight": "bold"})]),
-
-                        html.Hr(),
                         html.Div(
-                            style={"fontSize": "12px", "color": "#555"},
-                            children="Tip: Click a neighbourhood polygon to filter the charts."
+                            style={
+                                "backgroundColor": "white",
+                                "padding": "10px",
+                                "borderRadius": "10px",
+                                "display": "flex",
+                                "flexDirection": "column",
+                                "gap": "8px",
+                                "overflow": "hidden",
+                            },
+                            children=[
+                                html.H4("FILTER CRIME DATA", style={"margin": "0"}),
+                                html.Div(
+                                    style={"display": "flex", "gap": "8px"},
+                                    children=[
+                                        html.Div(
+                                            style={"flex": "1"},
+                                            children=[
+                                                html.Div(
+                                                    style={"display": "flex", "alignItems": "center", "gap": "6px"},
+                                                    children=[
+                                                        html.Label("Year", style={"minWidth": "42px", "fontWeight": "600"}),
+                                                        html.Div(
+                                                            style={"flex": "1"},
+                                                            children=[
+                                                                dcc.Dropdown(
+                                                                    id="year_dropdown",
+                                                                    options=[{"label": str(y), "value": int(y)} for y in years],
+                                                                    value=default_year,
+                                                                    clearable=False,
+                                                                    style={"fontSize": "14px"},
+                                                                )
+                                                            ],
+                                                        ),
+                                                    ],
+                                                ),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            style={"flex": "1"},
+                                            children=[
+                                                html.Div(
+                                                    style={"display": "flex", "alignItems": "center", "gap": "6px"},
+                                                    children=[
+                                                        html.Label("Time", style={"minWidth": "42px", "fontWeight": "600"}),
+                                                        html.Div(
+                                                            style={"flex": "1"},
+                                                            children=[
+                                                                dcc.Dropdown(
+                                                                    id="tod_dropdown",
+                                                                    options=[{"label": t, "value": t} for t in TOD_OPTIONS],
+                                                                    value=TOD_OPTIONS,
+                                                                    multi=True,
+                                                                    placeholder="Select",
+                                                                    style={"fontSize": "14px"},
+                                                                )
+                                                            ],
+                                                        ),
+                                                    ],
+                                                ),
+                                            ],
+                                        ),
+                                    ],
+                                ),
+                                html.Div(
+                                    style={"display": "flex", "alignItems": "center", "gap": "6px"},
+                                    children=[
+                                        html.Label("Crime Type", style={"minWidth": "78px", "fontWeight": "600"}),
+                                        html.Div(
+                                            style={"flex": "1"},
+                                            children=[
+                                                dcc.Dropdown(
+                                                    id="type_dropdown",
+                                                    options=[{"label": str(t), "value": t} for t in crime_types_all],
+                                                    value=crime_types_all[:4],
+                                                    multi=True,
+                                                    placeholder="Select crime types",
+                                                    style={"fontSize": "14px"},
+                                                )
+                                            ],
+                                        ),
+                                    ],
+                                ),
+                                html.Button("Reset filters", id="reset_btn", n_clicks=0),
+                            ],
                         ),
-
-                        html.Hr(),
-                        dcc.Graph(id="yearly_trend_graph", config={"displayModeBar": False}, style={"height": "240px"}),
+                        html.Div(
+                            style={
+                                "backgroundColor": "white",
+                                "padding": "10px",
+                                "borderRadius": "10px",
+                                "display": "flex",
+                                "flexDirection": "column",
+                                "gap": "8px",
+                                "overflow": "hidden",
+                            },
+                            children=[
+                                html.H4("NEIGHBOURHOOD MAP", style={"margin": "0"}),
+                                html.Button("Back", id="reset_map_btn", n_clicks=0, style={"display": "none"}),
+                                dcc.Graph(
+                                    id="map_graph",
+                                    figure=fig_neighbourhood_map(
+                                        filter_df(df_all, default_year, crime_types_all[:4], TOD_OPTIONS),
+                                        geojson=geo,
+                                        featureidkey=featureidkey,
+                                        name_mapping=name_mapping,
+                                        selected_neigh=None,
+                                    ),
+                                    style={"height": "400px", "width": "100%"},
+                                    config={"displayModeBar": True, "responsive": True},
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+                html.Div(
+                    style={
+                        "flex": "1",
+                        "height": "100%",
+                        "display": "flex",
+                        "flexDirection": "column",
+                        "gap": "8px",
+                        "overflow": "hidden",
+                    },
+                    children=[
+                        html.Div(
+                            style={"display": "flex", "gap": "8px", "height": "42%"},
+                            children=[
+                                html.Div(
+                                    style={
+                                        "flex": "1",
+                                        "backgroundColor": "white",
+                                        "padding": "10px",
+                                        "borderRadius": "10px",
+                                        "overflow": "hidden",
+                                    },
+                                    children=[
+                                        html.H4("INCIDENT SUMMARY", style={"margin": "0 0 8px 0"}),
+                                        html.Div(id="summary_year", style={"fontSize": "18px"}),
+                                        html.Br(),
+                                        html.Div(["Selected Area: ", html.Span(id="summary_area", style={"fontWeight": "bold"})]),
+                                        html.Br(),
+                                        html.Div(["Total Incidents: ", html.Span(id="summary_total", style={"fontWeight": "bold", "fontSize": "24px"})]),
+                                        html.Br(),
+                                        html.Div(["Peak Hour: ", html.Span(id="summary_peak", style={"fontWeight": "bold"})]),
+                                        html.Br(),
+                                        html.Div(["Top Crime Type: ", html.Span(id="summary_top_type", style={"fontWeight": "bold"})]),
+                                    ],
+                                ),
+                                html.Div(
+                                    style={
+                                        "flex": "1",
+                                        "backgroundColor": "white",
+                                        "padding": "10px",
+                                        "borderRadius": "10px",
+                                        "overflow": "hidden",
+                                    },
+                                    children=[
+                                        html.H4("YEARLY TREND", style={"margin": "0 0 8px 0"}),
+                                        dcc.Graph(id="yearly_trend_graph", config={"displayModeBar": False}, style={"height": "100%"}),
+                                    ],
+                                ),
+                            ],
+                        ),
+                        html.Div(
+                            style={
+                                "backgroundColor": "white",
+                                "padding": "10px",
+                                "borderRadius": "10px",
+                                "display": "flex",
+                                "flexDirection": "column",
+                                "gap": "8px",
+                                "height": "58%",
+                                "overflow": "hidden",
+                            },
+                            children=[
+                                html.Div(
+                                    style={"display": "flex", "gap": "8px"},
+                                    children=[
+                                        html.Button("Monthly", id="plot_btn_monthly", n_clicks=0, style=PLOT_BTN_ACTIVE_STYLE),
+                                        html.Button("Hourly", id="plot_btn_hourly", n_clicks=0, style=PLOT_BTN_BASE_STYLE),
+                                        html.Button("Crime Type", id="plot_btn_type", n_clicks=0, style=PLOT_BTN_BASE_STYLE),
+                                        html.Button("Volatility", id="plot_btn_volatility", n_clicks=0, style=PLOT_BTN_BASE_STYLE),
+                                    ],
+                                ),
+                                dcc.Graph(id="main_plot_graph", config={"displayModeBar": False}, style={"height": "100%", "width": "100%"}),
+                            ],
+                        ),
                     ],
                 ),
             ],
@@ -751,7 +836,7 @@ def reset_filters(_n):
     return default_year, crime_types_all[:4], TOD_OPTIONS
 
 # -----------------------------
-# Store selected neighbourhood (persists while filters change)
+# Store selected neighbourhood
 # -----------------------------
 @app.callback(
     Output("selected_neigh_store", "data"),
@@ -759,7 +844,6 @@ def reset_filters(_n):
     Input("reset_map_btn", "n_clicks"),
     State("selected_neigh_store", "data"),
 )
-
 def update_selected_neigh(clickData, reset_clicks, current_selected):
     ctx = callback_context
     trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
@@ -799,6 +883,24 @@ def update_selected_plot(_m, _h, _t, _v, current_plot):
         return "monthly"
     return current_plot or "monthly"
 
+# -----------------------------
+# Active plot button highlight
+# -----------------------------
+@app.callback(
+    Output("plot_btn_monthly", "style"),
+    Output("plot_btn_hourly", "style"),
+    Output("plot_btn_type", "style"),
+    Output("plot_btn_volatility", "style"),
+    Input("selected_plot_store", "data"),
+)
+def update_plot_button_styles(selected_plot):
+    selected = selected_plot or "monthly"
+    return (
+        PLOT_BTN_ACTIVE_STYLE if selected == "monthly" else PLOT_BTN_BASE_STYLE,
+        PLOT_BTN_ACTIVE_STYLE if selected == "hourly" else PLOT_BTN_BASE_STYLE,
+        PLOT_BTN_ACTIVE_STYLE if selected == "type" else PLOT_BTN_BASE_STYLE,
+        PLOT_BTN_ACTIVE_STYLE if selected == "volatility" else PLOT_BTN_BASE_STYLE,
+    )
 
 # -----------------------------
 # Main update callback
@@ -818,7 +920,6 @@ def update_selected_plot(_m, _h, _t, _v, current_plot):
     Input("selected_neigh_store", "data"),
     Input("selected_plot_store", "data"),
 )
-
 def update_dashboard(year, types_selected, tod_selected, selected_neigh, selected_plot):
     df_f = filter_df(df_all, year, types_selected, tod_selected)
     df_focus = df_f if not selected_neigh else df_f[df_f["NEIGHBOURHOOD"] == selected_neigh]
@@ -855,12 +956,12 @@ def update_dashboard(year, types_selected, tod_selected, selected_neigh, selecte
         main_fig = m_fig
 
     summ = make_summary(df_f, selected_neigh)
-    summ_year = f"Year: {year}" if year is not None else "Year: —"
-
+    summ_year = ["Year: ", html.Span(str(year) if year is not None else "—", style={"fontWeight": "bold"})]
     btn_style = {"display": "block"} if selected_neigh else {"display": "none"}
 
     return (
-        map_fig, main_fig,
+        map_fig,
+        main_fig,
         summ_year,
         summ["selected_area"],
         f'{summ["total_incidents"]:,}',
@@ -878,7 +979,6 @@ def update_dashboard(year, types_selected, tod_selected, selected_neigh, selecte
     Input("tod_dropdown", "value"),
     Input("selected_neigh_store", "data"),
 )
-
 def update_yearly(types_selected, tod_selected, selected_neigh):
     return fig_yearly_trend(df_all, types_selected, tod_selected, selected_neigh)
 
