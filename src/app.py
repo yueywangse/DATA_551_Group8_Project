@@ -232,7 +232,7 @@ def get_feature_bounds(
     featureidkey: str,
     feature_name: str,
     map_width_px: int = 800,
-    map_height_px: int = 300,
+    map_height_px: int = 340,
     padding: float = 0.85,
 ):
     prop_key = featureidkey.split(".")[-1]
@@ -418,8 +418,8 @@ def fig_neighbourhood_map(
     name_mapping: dict[str, str],
     selected_neigh: str | None,
 ):
-    map_center = {"lat": 49.24, "lon": -123.1207}
-    map_zoom = 9.9
+    map_center = {"lat": 49.243, "lon": -123.1207}
+    map_zoom = 10
 
     if selected_neigh and selected_neigh in name_mapping:
         selected_geo = name_mapping[selected_neigh]
@@ -475,7 +475,7 @@ def fig_neighbourhood_map(
                 center=map_center,
                 mapbox_style="open-street-map",
                 title=f"Incidents in {selected_neigh}",
-                height=300,
+                height=340,
                 )
 
         # neighbourhood boundary line
@@ -521,7 +521,7 @@ def fig_neighbourhood_map(
         hover_name="NEIGH_GEO",
         hover_data={"incidents": True},
         title="Incidents by neighbourhood (click a polygon to zoom & see points)",
-        height=300,
+        height=340,
     )
 
     fig.update_layout(margin=dict(l=10, r=10, t=55, b=10))
@@ -619,7 +619,7 @@ app.layout = html.Div(
             children=[
                 html.Div(
                     style={
-                        "flex": "0 0 42%",
+                        "flex": "0 0 39%",
                         "height": "100%",
                         "display": "flex",
                         "flexDirection": "column",
@@ -640,26 +640,61 @@ app.layout = html.Div(
                             children=[
                                 html.H4("FILTER CRIME DATA", style={"margin": "0"}),
                                 html.Div(
-                                    style={"display": "flex", "alignItems": "center", "gap": "8px"},
+                                    style={"display": "flex", "gap": "8px"},
                                     children=[
-                                        html.Label("Year", style={"minWidth": "120px", "fontWeight": "600"}),
                                         html.Div(
                                             style={"flex": "1"},
                                             children=[
-                                                dcc.Dropdown(
-                                                    id="year_dropdown",
-                                                    options=[{"label": str(y), "value": int(y)} for y in years],
-                                                    value=default_year,
-                                                    clearable=False,
-                                                )
+                                                html.Div(
+                                                    style={"display": "flex", "alignItems": "center", "gap": "6px"},
+                                                    children=[
+                                                        html.Label("Year", style={"minWidth": "42px", "fontWeight": "600"}),
+                                                        html.Div(
+                                                            style={"flex": "1"},
+                                                            children=[
+                                                                dcc.Dropdown(
+                                                                    id="year_dropdown",
+                                                                    options=[{"label": str(y), "value": int(y)} for y in years],
+                                                                    value=default_year,
+                                                                    clearable=False,
+                                                                    style={"fontSize": "14px"},
+                                                                )
+                                                            ],
+                                                        ),
+                                                    ],
+                                                ),
+                                            ],
+                                        ),
+                                        html.Div(
+                                            style={"flex": "1"},
+                                            children=[
+                                                html.Div(
+                                                    style={"display": "flex", "alignItems": "center", "gap": "6px"},
+                                                    children=[
+                                                        html.Label("Time", style={"minWidth": "42px", "fontWeight": "600"}),
+                                                        html.Div(
+                                                            style={"flex": "1"},
+                                                            children=[
+                                                                dcc.Dropdown(
+                                                                    id="tod_dropdown",
+                                                                    options=[{"label": t, "value": t} for t in TOD_OPTIONS],
+                                                                    value=TOD_OPTIONS,
+                                                                    multi=True,
+                                                                    placeholder="Select",
+                                                                    style={"fontSize": "14px"},
+                                                                )
+                                                            ],
+                                                        ),
+                                                    ],
+                                                ),
                                             ],
                                         ),
                                     ],
                                 ),
                                 html.Div(
-                                    style={"display": "flex", "alignItems": "center", "gap": "8px"},
+                                    style={"display": "flex", "alignItems": "center", "gap": "6px"},
                                     children=[
-                                        html.Label("Crime Type", style={"minWidth": "120px", "fontWeight": "600"}),
+                                        html.Label("Crime Type", style={"minWidth": "78px", "fontWeight": "600"}),
                                         html.Div(
                                             style={"flex": "1"},
                                             children=[
@@ -669,24 +704,7 @@ app.layout = html.Div(
                                                     value=crime_types_all[:4],
                                                     multi=True,
                                                     placeholder="Select crime types",
-                                                )
-                                            ],
-                                        ),
-                                    ],
-                                ),
-                                html.Div(
-                                    style={"display": "flex", "alignItems": "center", "gap": "8px"},
-                                    children=[
-                                        html.Label("Time Filter", style={"minWidth": "120px", "fontWeight": "600"}),
-                                        html.Div(
-                                            style={"flex": "1"},
-                                            children=[
-                                                dcc.Dropdown(
-                                                    id="tod_dropdown",
-                                                    options=[{"label": t, "value": t} for t in TOD_OPTIONS],
-                                                    value=TOD_OPTIONS,
-                                                    multi=True,
-                                                    placeholder="Select times of day",
+                                                    style={"fontSize": "14px"},
                                                 )
                                             ],
                                         ),
@@ -717,7 +735,7 @@ app.layout = html.Div(
                                         name_mapping=name_mapping,
                                         selected_neigh=None,
                                     ),
-                                    style={"height": "360px", "width": "100%"},
+                                    style={"height": "400px", "width": "100%"},
                                     config={"displayModeBar": True, "responsive": True},
                                 ),
                             ],
