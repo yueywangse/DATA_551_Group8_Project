@@ -421,8 +421,8 @@ def fig_neighbourhood_map(
     name_mapping: dict[str, str],
     selected_neigh: str | None,
 ):
-    map_center = {"lat": 49.2827, "lon": -123.1207}
-    map_zoom = 11
+    map_center = {"lat": 49.235, "lon": -123.1207}
+    map_zoom = 9.8
 
     if selected_neigh and selected_neigh in name_mapping:
         selected_geo = name_mapping[selected_neigh]
