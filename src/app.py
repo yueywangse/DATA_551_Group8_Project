@@ -232,7 +232,7 @@ def get_feature_bounds(
     featureidkey: str,
     feature_name: str,
     map_width_px: int = 800,
-    map_height_px: int = 420,
+    map_height_px: int = 300,
     padding: float = 0.85,
 ):
     prop_key = featureidkey.split(".")[-1]
@@ -421,8 +421,8 @@ def fig_neighbourhood_map(
     name_mapping: dict[str, str],
     selected_neigh: str | None,
 ):
-    map_center = {"lat": 49.2827, "lon": -123.1207}
-    map_zoom = 11
+    map_center = {"lat": 49.235, "lon": -123.1207}
+    map_zoom = 9.8
 
     if selected_neigh and selected_neigh in name_mapping:
         selected_geo = name_mapping[selected_neigh]
@@ -478,7 +478,7 @@ def fig_neighbourhood_map(
                 center=map_center,
                 mapbox_style="open-street-map",
                 title=f"Incidents in {selected_neigh}",
-                height=420,
+                height=300,
                 )
 
         # neighbourhood boundary line
@@ -524,7 +524,7 @@ def fig_neighbourhood_map(
         hover_name="NEIGH_GEO",
         hover_data={"incidents": True},
         title="Incidents by neighbourhood (click a polygon to zoom & see points)",
-        height=420,
+        height=300,
     )
 
     fig.update_layout(margin=dict(l=10, r=10, t=55, b=10))
@@ -590,29 +590,30 @@ app.layout = html.Div(
     style={
         "fontFamily": "Arial",
         "backgroundColor": "#F7F7F7",
-        "padding": "10px",
+        "padding": "8px",
         "height": "100vh",
         "boxSizing": "border-box",
         "overflow": "hidden",
     },
     children=[
         dcc.Store(id="selected_neigh_store", data=None),
+        dcc.Store(id="selected_plot_store", data="monthly"),
         html.H2("Vancouver Crime Patterns Dashboard", style={"textAlign": "center", "margin": "6px 0"}),
         html.Div(
-            style={"display": "flex", "gap": "12px", "height": "calc(100vh - 60px)", "overflow": "hidden"},
+            style={"display": "flex", "gap": "10px", "height": "calc(100vh - 56px)", "overflow": "hidden"},
             children=[
                 # Left controls
                 html.Div(
                     style={
                         "flex": "1",
                         "backgroundColor": "white",
-                        "padding": "12px",
+                        "padding": "10px",
                         "borderRadius": "10px",
                         "height": "100%",
-                        "overflowY": "auto",
+                        "overflow": "hidden",
                     },
                     children=[
-                        html.H4("FILTER CRIME DATA"),
+                        html.H4("FILTER CRIME DATA", style={"margin": "0 0 8px 0"}),
 
                         html.Label("Year"),
                         dcc.Dropdown(
@@ -624,34 +625,26 @@ app.layout = html.Div(
 
                         html.Br(),
                         html.Label("Crime Type Filter"),
-                        dcc.Checklist(
-                            id="type_checklist",
-                            options=make_type_options_plain(crime_types_all),
+                        dcc.Dropdown(
+                            id="type_dropdown",
+                            options=[{"label": str(t), "value": t} for t in crime_types_all],
                             value=crime_types_all[:4],
-                            inputStyle={"marginRight": "8px"},
+                            multi=True,
+                            placeholder="Select crime types",
                         ),
 
                         html.Hr(),
                         html.Label("Time Filter"),
-                        dcc.Checklist(
-                            id="tod_checklist",
+                        dcc.Dropdown(
+                            id="tod_dropdown",
                             options=[{"label": t, "value": t} for t in TOD_OPTIONS],
                             value=TOD_OPTIONS,
-                            inputStyle={"marginRight": "8px"},
+                            multi=True,
+                            placeholder="Select times of day",
                         ),
 
                         html.Br(),
                         html.Button("Reset filters", id="reset_btn", n_clicks=0),
-
-                        html.Hr(),
-                        html.Div(
-                            style={"fontSize": "12px", "color": "#666"},
-                            children=[
-                                "Map note: This uses neighbourhood polygons (GeoJSON). ",
-                                "If the map shows blank, your NEIGHBOURHOOD names may not match the GeoJSON names. ",
-                                "In that case, add a mapping dictionary in code."
-                            ],
-                        ),
                     ],
                 ),
 
@@ -660,15 +653,14 @@ app.layout = html.Div(
                     style={
                         "flex": "3",
                         "backgroundColor": "white",
-                        "padding": "12px",
+                        "padding": "10px",
                         "borderRadius": "10px",
                         "height": "100%",
                         "minHeight": "0",
-                        "overflowY": "auto",
-                        "overflowX": "hidden",
+                        "overflow": "hidden",
                         "display": "flex",
                         "flexDirection": "column",
-                        "gap": "10px",
+                        "gap": "8px",
                     },
                     children=[
                         html.Button(
@@ -687,28 +679,23 @@ app.layout = html.Div(
                                 name_mapping=name_mapping,
                                 selected_neigh=None,
                             ),
-                            style={"height": "420px", "width": "100%"},
+                            style={"height": "300px", "width": "100%"},
                             config={"displayModeBar": True, "responsive": True},
                         ),
 
                         html.Div(
                             style={
                                 "display": "flex",
-                                "gap": "10px",
-                                "flexWrap": "wrap",
+                                "gap": "8px",
                             },
                             children=[
-                                html.Div(style={"flex": "1 1 320px"}, children=[dcc.Graph(id="monthly_graph", config={"displayModeBar": False})]),
-                                html.Div(style={"flex": "1 1 320px"}, children=[dcc.Graph(id="hourly_graph", config={"displayModeBar": False})]),
-                                html.Div(style={"flex": "1 1 320px"}, children=[dcc.Graph(id="type_graph", config={"displayModeBar": False})]),
+                                html.Button("Monthly", id="plot_btn_monthly", n_clicks=0, style={"flex": "1"}),
+                                html.Button("Hourly", id="plot_btn_hourly", n_clicks=0, style={"flex": "1"}),
+                                html.Button("Crime Type", id="plot_btn_type", n_clicks=0, style={"flex": "1"}),
+                                html.Button("Volatility", id="plot_btn_volatility", n_clicks=0, style={"flex": "1"}),
                             ],
                         ),
-                        html.Div(
-                            style={"width": "100%"},
-                            children=[
-                                dcc.Graph(id="monthly_pct_change_graph", config={"displayModeBar": False})
-                            ],
-                        ),
+                        dcc.Graph(id="main_plot_graph", config={"displayModeBar": False}, style={"height": "260px", "width": "100%"}),
                     ],
                 ),
 
@@ -717,13 +704,13 @@ app.layout = html.Div(
                     style={
                         "flex": "1",
                         "backgroundColor": "white",
-                        "padding": "12px",
+                        "padding": "10px",
                         "borderRadius": "10px",
                         "height": "100%",
-                        "overflowY": "auto",
+                        "overflow": "hidden",
                     },
                     children=[
-                        html.H4("INCIDENT SUMMARY"),
+                        html.H4("INCIDENT SUMMARY", style={"margin": "0 0 8px 0"}),
                         html.Div(id="summary_year", style={"fontSize": "18px", "fontWeight": "bold"}),
 
                         html.Br(),
@@ -742,7 +729,7 @@ app.layout = html.Div(
                         ),
 
                         html.Hr(),
-                        dcc.Graph(id="yearly_trend_graph", config={"displayModeBar": False}),
+                        dcc.Graph(id="yearly_trend_graph", config={"displayModeBar": False}, style={"height": "240px"}),
                     ],
                 ),
             ],
@@ -755,8 +742,8 @@ app.layout = html.Div(
 # -----------------------------
 @app.callback(
     Output("year_dropdown", "value"),
-    Output("type_checklist", "value"),
-    Output("tod_checklist", "value"),
+    Output("type_dropdown", "value"),
+    Output("tod_dropdown", "value"),
     Input("reset_btn", "n_clicks"),
     prevent_initial_call=True,
 )
@@ -788,19 +775,29 @@ def update_selected_neigh(clickData, reset_clicks, current_selected):
     return current_selected
 
 # -----------------------------
-# Toggle type checklist dot display:
-#   - not zoomed (no selected_neigh) -> plain
-#   - zoomed (selected_neigh) -> dotted
+# Plot selection callback
 # -----------------------------
 @app.callback(
-    Output("type_checklist", "options"),
-    Input("selected_neigh_store", "data"),
+    Output("selected_plot_store", "data"),
+    Input("plot_btn_monthly", "n_clicks"),
+    Input("plot_btn_hourly", "n_clicks"),
+    Input("plot_btn_type", "n_clicks"),
+    Input("plot_btn_volatility", "n_clicks"),
+    State("selected_plot_store", "data"),
 )
+def update_selected_plot(_m, _h, _t, _v, current_plot):
+    ctx = callback_context
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
 
-def toggle_type_options(selected_neigh):
-    if not selected_neigh:
-        return make_type_options_plain(crime_types_all)
-    return make_type_options_dotted(crime_types_all)
+    if trigger == "plot_btn_hourly":
+        return "hourly"
+    if trigger == "plot_btn_type":
+        return "type"
+    if trigger == "plot_btn_volatility":
+        return "volatility"
+    if trigger == "plot_btn_monthly":
+        return "monthly"
+    return current_plot or "monthly"
 
 
 # -----------------------------
@@ -808,10 +805,7 @@ def toggle_type_options(selected_neigh):
 # -----------------------------
 @app.callback(
     Output("map_graph", "figure"),
-    Output("monthly_graph", "figure"),
-    Output("hourly_graph", "figure"),
-    Output("type_graph", "figure"),
-    Output("monthly_pct_change_graph", "figure"),
+    Output("main_plot_graph", "figure"),
     Output("summary_year", "children"),
     Output("summary_area", "children"),
     Output("summary_total", "children"),
@@ -819,12 +813,13 @@ def toggle_type_options(selected_neigh):
     Output("summary_top_type", "children"),
     Output("reset_map_btn", "style"),
     Input("year_dropdown", "value"),
-    Input("type_checklist", "value"),
-    Input("tod_checklist", "value"),
+    Input("type_dropdown", "value"),
+    Input("tod_dropdown", "value"),
     Input("selected_neigh_store", "data"),
+    Input("selected_plot_store", "data"),
 )
 
-def update_dashboard(year, types_selected, tod_selected, selected_neigh):
+def update_dashboard(year, types_selected, tod_selected, selected_neigh, selected_plot):
     df_f = filter_df(df_all, year, types_selected, tod_selected)
     df_focus = df_f if not selected_neigh else df_f[df_f["NEIGHBOURHOOD"] == selected_neigh]
 
@@ -842,10 +837,22 @@ def update_dashboard(year, types_selected, tod_selected, selected_neigh):
         t_fig = fig_type_comparison(df_focus)
         p_fig = fig_monthly_pct_change(df_focus, selected_neigh)
     else:
-        m_fig = px.bar(title="Monthly trend (# incidents)"); m_fig.update_layout(height=300)
-        h_fig = px.bar(title="Hourly distribution (# incidents)"); h_fig.update_layout(height=300)
-        t_fig = px.bar(title="Crime type comparison (top 8)"); t_fig.update_layout(height=300)
-        p_fig = px.line(title="Monthly Percent Change Volatility (Top 8 Neighbourhoods)"); p_fig.update_layout(height=400)
+        m_fig = px.bar(title="Monthly trend (# incidents)"); m_fig.update_layout(height=260)
+        h_fig = px.bar(title="Hourly distribution (# incidents)"); h_fig.update_layout(height=260)
+        t_fig = px.bar(title="Crime type comparison (top 8)"); t_fig.update_layout(height=260)
+        p_fig = px.line(title="Monthly Percent Change Volatility (Top 8 Neighbourhoods)"); p_fig.update_layout(height=260)
+
+    for fig in [m_fig, h_fig, t_fig, p_fig]:
+        fig.update_layout(height=260, margin=dict(l=10, r=10, t=40, b=10))
+
+    if selected_plot == "hourly":
+        main_fig = h_fig
+    elif selected_plot == "type":
+        main_fig = t_fig
+    elif selected_plot == "volatility":
+        main_fig = p_fig
+    else:
+        main_fig = m_fig
 
     summ = make_summary(df_f, selected_neigh)
     summ_year = f"Year: {year}" if year is not None else "Year: —"
@@ -853,7 +860,7 @@ def update_dashboard(year, types_selected, tod_selected, selected_neigh):
     btn_style = {"display": "block"} if selected_neigh else {"display": "none"}
 
     return (
-        map_fig, m_fig, h_fig, t_fig, p_fig,
+        map_fig, main_fig,
         summ_year,
         summ["selected_area"],
         f'{summ["total_incidents"]:,}',
@@ -867,8 +874,8 @@ def update_dashboard(year, types_selected, tod_selected, selected_neigh):
 # -----------------------------
 @app.callback(
     Output("yearly_trend_graph", "figure"),
-    Input("type_checklist", "value"),
-    Input("tod_checklist", "value"),
+    Input("type_dropdown", "value"),
+    Input("tod_dropdown", "value"),
     Input("selected_neigh_store", "data"),
 )
 
