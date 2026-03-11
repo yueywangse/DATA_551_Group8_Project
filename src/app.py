@@ -606,7 +606,7 @@ PLOT_BTN_ACTIVE_STYLE = {
 # -----------------------------
 # App
 # -----------------------------
-app = Dash(__name__)
+app = Dash(__name__, title="Vancouver Crime Patterns Dashboard")
 server = app.server
 
 app.layout = html.Div(
@@ -732,7 +732,7 @@ app.layout = html.Div(
                                 "overflow": "hidden",
                             },
                             children=[
-                                html.H4("NEIGHBOURHOOD MAP", style={"margin": "0"}),
+                                html.H4("Neighbourhood Map", style={"margin": "0"}),
                                 html.Button("Back", id="reset_map_btn", n_clicks=0, style={"display": "none"}),
                                 dcc.Graph(
                                     id="map_graph",
