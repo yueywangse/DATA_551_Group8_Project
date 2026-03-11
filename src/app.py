@@ -281,7 +281,7 @@ def get_feature_bounds(
 # -----------------------------
 def make_summary(df_filt: pd.DataFrame, selected_neigh: str | None) -> dict:
     d = df_filt
-    selected_area_label = "All neighbourhoods"
+    selected_area_label = "All Neighbourhoods"
     if selected_neigh:
         d = d[d["NEIGHBOURHOOD"] == selected_neigh]
         selected_area_label = selected_neigh
@@ -311,27 +311,35 @@ def fig_monthly(df_focus: pd.DataFrame):
     grp = pd.DataFrame({"MONTH": counts.index, "incidents": counts.values, "MONTH_NAME": [month_map[m] for m in counts.index]})
     fig = px.bar(grp, x="MONTH_NAME", y="incidents",
                  category_orders={"MONTH_NAME": list(month_map.values())},
-                 title="Monthly trend (# incidents)")
+                 title="Monthly Trend (# Incidents)")
     fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=300)
-    fig.update_yaxes(title="# incidents")
+    fig.update_yaxes(title="# Incidents")
     fig.update_xaxes(title="")
     return fig
 
 def fig_hourly(df_focus: pd.DataFrame):
-    grp = df_focus.groupby("HOUR", as_index=False).size().sort_values("HOUR")
-    fig = px.bar(grp, x="HOUR", y="size", title="Hourly distribution (# incidents)")
+    counts = (
+        df_focus.groupby("HOUR")
+        .size()
+        .reindex(range(24), fill_value=0)
+        .reset_index(name="size")
+    )
+
+    fig = px.bar(counts, x="HOUR", y="size", title="Hourly Distribution (# Incidents)")
+
     fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=300)
-    fig.update_yaxes(title="# incidents")
-    fig.update_xaxes(title="Hour of day")
+    fig.update_yaxes(title="# Incidents")
+    fig.update_xaxes(title="Hour of Day", dtick=1)
+
     return fig
 
 def fig_type_comparison(df_focus: pd.DataFrame):
     top_types = df_focus["TYPE"].value_counts().head(8).index.tolist()
     d = df_focus[df_focus["TYPE"].isin(top_types)]
     grp = d.groupby("TYPE", as_index=False).size().sort_values("size", ascending=True)
-    fig = px.bar(grp, x="size", y="TYPE", orientation="h", title="Crime type comparison (top 8)")
+    fig = px.bar(grp, x="size", y="TYPE", orientation="h", title="Crime Type Comparison (top 8)")
     fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=300)
-    fig.update_xaxes(title="# incidents")
+    fig.update_xaxes(title="# Incidents")
     fig.update_yaxes(title="")
     return fig
 
@@ -400,9 +408,9 @@ def fig_yearly_trend(df_all: pd.DataFrame, types_selected, tod_selected, selecte
         d = d[d["NEIGHBOURHOOD"] == selected_neigh]
 
     counts = d.groupby("YEAR").size().reindex(range(2019, 2024), fill_value=0).reset_index(name="incidents")
-    fig = px.line(counts, x="YEAR", y="incidents", markers=True)
+    fig = px.line(counts, x="YEAR", y="Incidents", markers=True)
     fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=280)
-    fig.update_yaxes(title="# incidents")
+    fig.update_yaxes(title="# Incidents")
     fig.update_xaxes(title="Year", dtick=1)
     return fig
 
@@ -520,7 +528,7 @@ def fig_neighbourhood_map(
         opacity=0.55,
         hover_name="NEIGH_GEO",
         hover_data={"incidents": True},
-        title="Incidents by neighbourhood (click a polygon to zoom & see points)",
+        title="Incidents by Neighbourhood (Click a Polygon to Zoom & See Points)",
         height=340,
     )
 
@@ -638,7 +646,7 @@ app.layout = html.Div(
                                 "overflow": "hidden",
                             },
                             children=[
-                                html.H4("FILTER CRIME DATA", style={"margin": "0"}),
+                                html.H4("Filter Crime Data", style={"margin": "0"}),
                                 html.Div(
                                     style={"display": "flex", "gap": "8px"},
                                     children=[
@@ -710,7 +718,7 @@ app.layout = html.Div(
                                         ),
                                     ],
                                 ),
-                                html.Button("Reset filters", id="reset_btn", n_clicks=0),
+                                html.Button("Reset Filters", id="reset_btn", n_clicks=0),
                             ],
                         ),
                         html.Div(
@@ -764,7 +772,7 @@ app.layout = html.Div(
                                         "overflow": "hidden",
                                     },
                                     children=[
-                                        html.H4("INCIDENT SUMMARY", style={"margin": "0 0 8px 0"}),
+                                        html.H4("Incident Summary", style={"margin": "0 0 8px 0"}),
                                         html.Div(id="summary_year", style={"fontSize": "18px"}),
                                         html.Br(),
                                         html.Div(["Selected Area: ", html.Span(id="summary_area", style={"fontWeight": "bold"})]),
@@ -785,7 +793,7 @@ app.layout = html.Div(
                                         "overflow": "hidden",
                                     },
                                     children=[
-                                        html.H4("YEARLY TREND", style={"margin": "0 0 8px 0"}),
+                                        html.H4("Yearly Trend", style={"margin": "0 0 8px 0"}),
                                         dcc.Graph(id="yearly_trend_graph", config={"displayModeBar": False}, style={"height": "100%"}),
                                     ],
                                 ),
@@ -938,9 +946,9 @@ def update_dashboard(year, types_selected, tod_selected, selected_neigh, selecte
         t_fig = fig_type_comparison(df_focus)
         p_fig = fig_monthly_pct_change(df_focus, selected_neigh)
     else:
-        m_fig = px.bar(title="Monthly trend (# incidents)"); m_fig.update_layout(height=260)
-        h_fig = px.bar(title="Hourly distribution (# incidents)"); h_fig.update_layout(height=260)
-        t_fig = px.bar(title="Crime type comparison (top 8)"); t_fig.update_layout(height=260)
+        m_fig = px.bar(title="Monthly Trend (# Incidents)"); m_fig.update_layout(height=260)
+        h_fig = px.bar(title="Hourly Distribution (# Incidents)"); h_fig.update_layout(height=260)
+        t_fig = px.bar(title="Crime Type Comparison (Top 8)"); t_fig.update_layout(height=260)
         p_fig = px.line(title="Monthly Percent Change Volatility (Top 8 Neighbourhoods)"); p_fig.update_layout(height=260)
 
     for fig in [m_fig, h_fig, t_fig, p_fig]:
