@@ -329,21 +329,21 @@ def make_summary(df_filt: pd.DataFrame, selected_neigh: str | None) -> dict:
     }
 
 def fig_monthly(df_focus: pd.DataFrame):
-    month_map = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
-    d = df_focus.copy()
-    d["MONTH"] = pd.to_numeric(d["MONTH"], errors="coerce")
-    d = d[d["MONTH"].between(1, 12)]
-    counts = d["MONTH"].value_counts().reindex(range(1, 13), fill_value=0).sort_index()
-    grp = pd.DataFrame({"MONTH": counts.index, "incidents": counts.values, "MONTH_NAME": [month_map[m] for m in counts.index]})
-    fig = px.bar(grp, x="MONTH_NAME", y="incidents",
-                 category_orders={"MONTH_NAME": list(month_map.values())},
-                 title="Monthly Trend (# Incidents)")
+
+    month_map = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",
+                 7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
+
     grp = (
-        d.groupby(["MONTH", "CRIME_GROUP"], as_index=False)
+        df_focus.groupby(["MONTH","CRIME_GROUP"])
         .size()
-        .rename(columns={"size": "incidents"})
+        .unstack(fill_value=0)
+        .reindex(range(1,13), fill_value=0)
+        .stack()
+        .reset_index(name="incidents")
     )
+
     grp["MONTH_NAME"] = grp["MONTH"].map(month_map)
+
     fig = px.bar(
         grp,
         x="MONTH_NAME",
@@ -351,136 +351,143 @@ def fig_monthly(df_focus: pd.DataFrame):
         color="CRIME_GROUP",
         category_orders={
             "MONTH_NAME": list(month_map.values()),
-            "CRIME_GROUP": ["Violent", "Theft", "Non-violent"],
+            "CRIME_GROUP": ["Violent","Theft","Non-violent"]
         },
         color_discrete_map=GROUP_COLORS,
-        title="Monthly trend (# incidents)",
+        labels={
+            "CRIME_GROUP": "Crime Category",
+            "incidents": "Number of Incidents",
+            "MONTH_NAME": "Month"
+        },
+        title="Monthly Trend (# Incidents)",
     )
-    fig.update_layout(barmode="stack")
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=300)
+
+    fig.update_layout(
+        barmode="stack",
+        margin=dict(l=10,r=10,t=40,b=10),
+        height=300
+    )
+
     fig.update_yaxes(title="# Incidents")
     fig.update_xaxes(title="")
+
     return fig
 
 def fig_hourly(df_focus: pd.DataFrame):
-    counts = (
-        df_focus.groupby("HOUR")
-        .size()
-        .reindex(range(24), fill_value=0)
-        .reset_index(name="size")
-    )
-
-    fig = px.bar(counts, x="HOUR", y="size", title="Hourly Distribution (# Incidents)")
 
     grp = (
-        df_focus.groupby(["HOUR", "CRIME_GROUP"], as_index=False)
+        df_focus.groupby(["HOUR","CRIME_GROUP"])
         .size()
-        .rename(columns={"size": "incidents"})
-        .sort_values("HOUR")
+        .unstack(fill_value=0)
+        .reindex(range(24), fill_value=0)
+        .stack()
+        .reset_index(name="incidents")
     )
+
     fig = px.bar(
         grp,
         x="HOUR",
         y="incidents",
         color="CRIME_GROUP",
-        category_orders={"CRIME_GROUP": ["Violent", "Theft", "Non-violent"]},
+        category_orders={"CRIME_GROUP":["Violent","Theft","Non-violent"]},
         color_discrete_map=GROUP_COLORS,
-        title="Hourly distribution (# incidents)",
+        labels={
+            "CRIME_GROUP": "Crime Category",
+            "incidents": "Number of Incidents",
+            "HOUR": "Hour of Day"
+        },
+        title="Hourly Distribution (# Incidents)"
     )
-    fig.update_layout(barmode="stack")
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=300)
+
+    fig.update_layout(
+        barmode="stack",
+        margin=dict(l=10,r=10,t=40,b=10),
+        height=300
+    )
+
+    fig.update_xaxes(title="Hour of Day", range=[-0.5,23.5], dtick=1)
     fig.update_yaxes(title="# Incidents")
-    fig.update_xaxes(title="Hour of Day", dtick=1)
 
     return fig
 
 def fig_type_comparison(df_focus: pd.DataFrame):
-    top_types = df_focus["TYPE"].value_counts().head(8).index.tolist()
-    d = df_focus[df_focus["TYPE"].isin(top_types)]
-    grp = d.groupby("TYPE", as_index=False).size().sort_values("size", ascending=True)
-    fig = px.bar(grp, x="size", y="TYPE", orientation="h", title="Crime Type Comparison (top 8)")
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=300)
-    fig.update_xaxes(title="# Incidents")
-    fig.update_yaxes(title="")
+
     grp = (
-        df_focus.groupby("CRIME_GROUP", as_index=False)
+        df_focus.groupby("CRIME_GROUP")
         .size()
-        .rename(columns={"size": "incidents"})
+        .reindex(["Violent","Theft","Non-violent"], fill_value=0)
+        .reset_index(name="incidents")
     )
-    group_order = ["Violent", "Theft", "Non-violent"]
-    grp["CRIME_GROUP"] = pd.Categorical(grp["CRIME_GROUP"], categories=group_order, ordered=True)
-    grp = grp.sort_values("CRIME_GROUP")
 
     fig = px.bar(
         grp,
         x="CRIME_GROUP",
         y="incidents",
         color="CRIME_GROUP",
-        category_orders={"CRIME_GROUP": group_order},
+        category_orders={"CRIME_GROUP":["Violent","Theft","Non-violent"]},
         color_discrete_map=GROUP_COLORS,
-        title="Crime category comparison",
+        labels={
+            "CRIME_GROUP": "Crime Category",
+            "incidents": "Number of Incidents"
+        },
+        title="Crime Category Comparison"
     )
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=300)
+
+    fig.update_layout(
+        margin=dict(l=10,r=10,t=40,b=10),
+        height=300
+    )
+
     fig.update_xaxes(title="")
-    fig.update_yaxes(title="# incidents")
+    fig.update_yaxes(title="# Incidents")
+
     return fig
 
 def fig_monthly_pct_change(df_focus: pd.DataFrame, selected_neigh: str | None):
+
     d = df_focus.copy()
 
-    if "year_month" in d.columns and "pct_change_vs_prev_month" in d.columns:
-        d["year_month"] = pd.to_datetime(d["year_month"].astype("string") + "-01", errors="coerce")
-        d["pct_change_vs_prev_month"] = pd.to_numeric(d["pct_change_vs_prev_month"], errors="coerce")
+    grp = (
+        d.groupby(["YEAR","MONTH"])
+        .size()
+        .reset_index(name="incidents")
+    )
 
-        plot_df = (
-            d[["NEIGHBOURHOOD", "year_month", "pct_change_vs_prev_month"]]
-            .dropna(subset=["NEIGHBOURHOOD", "year_month", "pct_change_vs_prev_month"])
-            .drop_duplicates(subset=["NEIGHBOURHOOD", "year_month"])
-            .sort_values(["NEIGHBOURHOOD", "year_month"])
-        )
-    else:
-        grp = (
-            d.dropna(subset=["YEAR", "MONTH", "NEIGHBOURHOOD"])
-            .groupby(["NEIGHBOURHOOD", "YEAR", "MONTH"], as_index=False)
-            .size()
-            .rename(columns={"size": "incidents"})
-            .sort_values(["NEIGHBOURHOOD", "YEAR", "MONTH"])
-        )
-        grp["pct_change_vs_prev_month"] = grp.groupby("NEIGHBOURHOOD")["incidents"].pct_change()
-        grp["year_month"] = pd.to_datetime(
-            dict(year=grp["YEAR"].astype(int), month=grp["MONTH"].astype(int), day=1),
-            errors="coerce",
-        )
-        plot_df = grp[["NEIGHBOURHOOD", "year_month", "pct_change_vs_prev_month"]].dropna(
-            subset=["NEIGHBOURHOOD", "year_month", "pct_change_vs_prev_month"]
-        )
+    grp["date"] = pd.to_datetime(
+        dict(year=grp["YEAR"], month=grp["MONTH"], day=1),
+        errors="coerce"
+    )
 
-    if selected_neigh:
-        plot_df = plot_df[plot_df["NEIGHBOURHOOD"] == selected_neigh]
-        title = f"Monthly Percent Change Volatility ({selected_neigh})"
-    else:
-        top_neigh = d["NEIGHBOURHOOD"].value_counts().head(8).index.tolist()
-        plot_df = plot_df[plot_df["NEIGHBOURHOOD"].isin(top_neigh)]
-        title = "Monthly Percent Change Volatility (Top 8 Neighbourhoods)"
+    grp = (
+        grp.set_index("date")
+        .resample("MS")
+        .sum()
+        .fillna(0)
+        .reset_index()
+    )
 
-    if plot_df.empty:
-        fig = px.line(title=title)
-        fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=400)
-        fig.update_yaxes(title="% Change", tickformat=".0%")
-        fig.update_xaxes(title="Year-Month")
-        return fig
+    grp["pct_change_vs_prev_month"] = grp["incidents"].pct_change().fillna(0)
 
     fig = px.line(
-        plot_df.sort_values("year_month"),
-        x="year_month",
+        grp,
+        x="date",
         y="pct_change_vs_prev_month",
-        color="NEIGHBOURHOOD",
         markers=True,
-        title=title,
+        labels={
+            "date": "Month",
+            "pct_change_vs_prev_month": "Percent Change from Previous Month"
+        },
+        title="Monthly Percent Change Volatility"
     )
-    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=400)
+
+    fig.update_layout(
+        margin=dict(l=10,r=10,t=40,b=10),
+        height=400
+    )
+
     fig.update_yaxes(title="% Change", tickformat=".0%")
     fig.update_xaxes(title="Year-Month")
+
     return fig
 
 def fig_yearly_trend(df_all: pd.DataFrame, types_selected, tod_selected, selected_neigh: str | None):
@@ -490,7 +497,7 @@ def fig_yearly_trend(df_all: pd.DataFrame, types_selected, tod_selected, selecte
         d = d[d["NEIGHBOURHOOD"] == selected_neigh]
 
     counts = d.groupby("YEAR").size().reindex(range(2019, 2024), fill_value=0).reset_index(name="incidents")
-    fig = px.line(counts, x="YEAR", y="Incidents", markers=True)
+    fig = px.line(counts, x="YEAR", y="incidents", markers=True)
     fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=280)
     fig.update_yaxes(title="# Incidents")
     counts = (
@@ -561,6 +568,12 @@ def fig_neighbourhood_map(
             lon="lon",
             color="TYPE",
             color_discrete_map=TYPE_COLORS,
+            labels={
+                "TYPE": "Crime Type",
+                "CRIME_GROUP": "Crime Category",
+                "lat": "Latitude",
+                "lon": "Longitude"
+            },
             
             hover_name="Crime type",
             
@@ -626,8 +639,19 @@ def fig_neighbourhood_map(
         opacity=0.55,
         hover_name="NEIGH_GEO",
         hover_data={"incidents": True},
+        labels={
+            "incidents": "Number of Incidents",
+            "NEIGH_GEO": "Neighbourhood"
+        },
         title="Incidents by Neighbourhood (Click a Polygon to Zoom & See Points)",
-        height=340,
+        height=500,
+    )
+
+    fig.update_layout(
+        margin=dict(l=10, r=10, t=55, b=10),
+        coloraxis_colorbar=dict(
+            title="Incidents"
+        )
     )
 
     fig.update_layout(margin=dict(l=10, r=10, t=55, b=10))
