@@ -1,0 +1,17 @@
+.compact-multi-dropdown .Select-control {
+    min-height: 38px;
+    max-height: 38px;
+    overflow: hidden;
+}
+
+.compact-multi-dropdown .Select-multi-value-wrapper {
+    max-height: 34px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+}
+
+.compact-multi-dropdown .Select-placeholder,
+.compact-multi-dropdown .Select--single > .Select-control .Select-value {
+    line-height: 36px;
+}

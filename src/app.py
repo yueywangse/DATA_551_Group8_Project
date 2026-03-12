@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import json
 import math
+import hashlib
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -49,27 +50,52 @@ TOD_OPTIONS = ["Morning (6–12)", "Afternoon (12–18)", "Evening (18–24)", "
 # Crime grouping (point colors)
 # -----------------------------
 GROUP_COLORS = {
-    "Violent": "#d62728",      # red
-    "Theft": "#ff7f0e",        # orange
-    "Nonviolent": "#1f77b4",   # blue
+    "Violent": "#d62728",      # red family
+    "Theft": "#2ca02c",        # green family
+    "Non-violent": "#1f77b4",  # blue family
 }
 
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    h = hex_color.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+    r, g, b = rgb
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+def _blend_with_white(hex_color: str, blend: float) -> str:
+    r, g, b = _hex_to_rgb(hex_color)
+    rr = int(r + (255 - r) * blend)
+    gg = int(g + (255 - g) * blend)
+    bb = int(b + (255 - b) * blend)
+    return _rgb_to_hex((rr, gg, bb))
+
+def color_for_crime_type(crime_type: str) -> str:
+    grp = crime_group_from_type(crime_type)
+    base = GROUP_COLORS.get(grp, "#6b7280")
+    digest = hashlib.md5(str(crime_type).lower().encode("utf-8")).hexdigest()
+    shade_seed = int(digest[:6], 16)
+    blend = 0.12 + (shade_seed % 28) / 100.0
+    return _blend_with_white(base, blend)
+
 def crime_group_from_type(t: str) -> str:
-    s = str(t).lower()
-    violent_kw = [
-        "assault", "robbery", "homicide", "sexual", "rape", "kidnap",
-        "weapon", "shoot", "stab", "violence", "murder"
-    ]
-    theft_kw = [
-        "theft", "break and enter", "b&e", "burglary",
-        "stolen", "shoplift", "larceny",
-        "vehicle theft", "theft of vehicle", "theft from vehicle"
-    ]
-    if any(k in s for k in violent_kw):
-        return "Violent"
-    if any(k in s for k in theft_kw):
+    s = " ".join(str(t).lower().strip().split())
+
+    if "theft" in s:
         return "Theft"
-    return "Nonviolent"
+
+    violent_types_exact = {
+        "homicide",
+        "offense against a person",
+        "offence against a person",
+    }
+
+    # Vancouver data has two vehicle-collision categories; match both by shared prefix.
+    is_vehicle_collision_type = s.startswith("vehicle collision")
+
+    if s in violent_types_exact or is_vehicle_collision_type:
+        return "Violent"
+    return "Non-violent"
 
 # -----------------------------
 # Data load + prep
@@ -312,6 +338,25 @@ def fig_monthly(df_focus: pd.DataFrame):
     fig = px.bar(grp, x="MONTH_NAME", y="incidents",
                  category_orders={"MONTH_NAME": list(month_map.values())},
                  title="Monthly Trend (# Incidents)")
+    grp = (
+        d.groupby(["MONTH", "CRIME_GROUP"], as_index=False)
+        .size()
+        .rename(columns={"size": "incidents"})
+    )
+    grp["MONTH_NAME"] = grp["MONTH"].map(month_map)
+    fig = px.bar(
+        grp,
+        x="MONTH_NAME",
+        y="incidents",
+        color="CRIME_GROUP",
+        category_orders={
+            "MONTH_NAME": list(month_map.values()),
+            "CRIME_GROUP": ["Violent", "Theft", "Non-violent"],
+        },
+        color_discrete_map=GROUP_COLORS,
+        title="Monthly trend (# incidents)",
+    )
+    fig.update_layout(barmode="stack")
     fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=300)
     fig.update_yaxes(title="# Incidents")
     fig.update_xaxes(title="")
@@ -327,6 +372,22 @@ def fig_hourly(df_focus: pd.DataFrame):
 
     fig = px.bar(counts, x="HOUR", y="size", title="Hourly Distribution (# Incidents)")
 
+    grp = (
+        df_focus.groupby(["HOUR", "CRIME_GROUP"], as_index=False)
+        .size()
+        .rename(columns={"size": "incidents"})
+        .sort_values("HOUR")
+    )
+    fig = px.bar(
+        grp,
+        x="HOUR",
+        y="incidents",
+        color="CRIME_GROUP",
+        category_orders={"CRIME_GROUP": ["Violent", "Theft", "Non-violent"]},
+        color_discrete_map=GROUP_COLORS,
+        title="Hourly distribution (# incidents)",
+    )
+    fig.update_layout(barmode="stack")
     fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=300)
     fig.update_yaxes(title="# Incidents")
     fig.update_xaxes(title="Hour of Day", dtick=1)
@@ -341,6 +402,27 @@ def fig_type_comparison(df_focus: pd.DataFrame):
     fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=300)
     fig.update_xaxes(title="# Incidents")
     fig.update_yaxes(title="")
+    grp = (
+        df_focus.groupby("CRIME_GROUP", as_index=False)
+        .size()
+        .rename(columns={"size": "incidents"})
+    )
+    group_order = ["Violent", "Theft", "Non-violent"]
+    grp["CRIME_GROUP"] = pd.Categorical(grp["CRIME_GROUP"], categories=group_order, ordered=True)
+    grp = grp.sort_values("CRIME_GROUP")
+
+    fig = px.bar(
+        grp,
+        x="CRIME_GROUP",
+        y="incidents",
+        color="CRIME_GROUP",
+        category_orders={"CRIME_GROUP": group_order},
+        color_discrete_map=GROUP_COLORS,
+        title="Crime category comparison",
+    )
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10), height=300)
+    fig.update_xaxes(title="")
+    fig.update_yaxes(title="# incidents")
     return fig
 
 def fig_monthly_pct_change(df_focus: pd.DataFrame, selected_neigh: str | None):
@@ -411,6 +493,22 @@ def fig_yearly_trend(df_all: pd.DataFrame, types_selected, tod_selected, selecte
     fig = px.line(counts, x="YEAR", y="Incidents", markers=True)
     fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=280)
     fig.update_yaxes(title="# Incidents")
+    counts = (
+        d.groupby(["YEAR", "CRIME_GROUP"], as_index=False)
+        .size()
+        .rename(columns={"size": "incidents"})
+    )
+    fig = px.line(
+        counts,
+        x="YEAR",
+        y="incidents",
+        color="CRIME_GROUP",
+        markers=True,
+        category_orders={"CRIME_GROUP": ["Violent", "Theft", "Non-violent"]},
+        color_discrete_map=GROUP_COLORS,
+    )
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=36), height=300)
+    fig.update_yaxes(title="# incidents")
     fig.update_xaxes(title="Year", dtick=1)
     return fig
 
@@ -461,8 +559,8 @@ def fig_neighbourhood_map(
             df_points,
             lat="lat",
             lon="lon",
-            color="CRIME_GROUP",
-            color_discrete_map=GROUP_COLORS,
+            color="TYPE",
+            color_discrete_map=TYPE_COLORS,
             
             hover_name="Crime type",
             
@@ -483,7 +581,7 @@ def fig_neighbourhood_map(
                 center=map_center,
                 mapbox_style="open-street-map",
                 title=f"Incidents in {selected_neigh}",
-                height=340,
+                height=470,
                 )
 
         # neighbourhood boundary line
@@ -547,25 +645,8 @@ def make_type_options_dotted(types_list: list[str]):
     opts = []
     for t in types_list:
         grp = crime_group_from_type(t)
-        dot_color = GROUP_COLORS.get(grp, "#999")
-
-        label = html.Span(
-            [
-                html.Span(str(t)),
-                html.Span(
-                    style={
-                        "display": "inline-block",
-                        "width": "10px",
-                        "height": "10px",
-                        "marginLeft": "8px",
-                        "borderRadius": "50%",
-                        "backgroundColor": dot_color,
-                        "flex": "0 0 auto",
-                    }
-                ),
-            ],
-            style={"display": "flex", "alignItems": "center"},
-        )
+        dot = "🔴" if grp == "Violent" else ("🟢" if grp == "Theft" else "🔵")
+        label = f"{str(t)} {dot}"
         opts.append({"label": label, "value": t})
     return opts
 
@@ -579,6 +660,7 @@ geo = load_geojson(GEOJSON_PATH)
 years = sorted(df_all["YEAR"].dropna().astype(int).unique().tolist())
 crime_types_all = sorted(df_all["TYPE"].dropna().unique().tolist())
 default_year = max(years) if years else None
+TYPE_COLORS = {t: color_for_crime_type(t) for t in crime_types_all}
 
 featureidkey, name_mapping = detect_featureidkey_and_mapping(
     geojson=geo,
@@ -627,7 +709,7 @@ app.layout = html.Div(
             children=[
                 html.Div(
                     style={
-                        "flex": "0 0 39%",
+                        "flex": "0 0 43%",
                         "height": "100%",
                         "display": "flex",
                         "flexDirection": "column",
@@ -708,7 +790,7 @@ app.layout = html.Div(
                                             children=[
                                                 dcc.Dropdown(
                                                     id="type_dropdown",
-                                                    options=[{"label": str(t), "value": t} for t in crime_types_all],
+                                                    options=make_type_options_dotted(crime_types_all),
                                                     value=crime_types_all[:4],
                                                     multi=True,
                                                     placeholder="Select crime types",
@@ -743,7 +825,7 @@ app.layout = html.Div(
                                         name_mapping=name_mapping,
                                         selected_neigh=None,
                                     ),
-                                    style={"height": "400px", "width": "100%"},
+                                    style={"height": "500px", "width": "100%"},
                                     config={"displayModeBar": True, "responsive": True},
                                 ),
                             ],
@@ -761,32 +843,33 @@ app.layout = html.Div(
                     },
                     children=[
                         html.Div(
-                            style={"display": "flex", "gap": "8px", "height": "42%"},
+                            style={"display": "flex", "gap": "8px", "height": "43%"},
                             children=[
                                 html.Div(
                                     style={
-                                        "flex": "1",
+                                        "flex": "0 0 38%",
                                         "backgroundColor": "white",
                                         "padding": "10px",
                                         "borderRadius": "10px",
                                         "overflow": "hidden",
                                     },
                                     children=[
-                                        html.H4("Incident Summary", style={"margin": "0 0 8px 0"}),
-                                        html.Div(id="summary_year", style={"fontSize": "18px"}),
-                                        html.Br(),
-                                        html.Div(["Selected Area: ", html.Span(id="summary_area", style={"fontWeight": "bold"})]),
-                                        html.Br(),
-                                        html.Div(["Total Incidents: ", html.Span(id="summary_total", style={"fontWeight": "bold", "fontSize": "24px"})]),
-                                        html.Br(),
-                                        html.Div(["Peak Hour: ", html.Span(id="summary_peak", style={"fontWeight": "bold"})]),
-                                        html.Br(),
-                                        html.Div(["Top Crime Type: ", html.Span(id="summary_top_type", style={"fontWeight": "bold"})]),
+                                        html.H4("INCIDENT SUMMARY", style={"margin": "0 0 8px 0"}),
+                                        html.Div(
+                                            style={"display": "flex", "flexDirection": "column", "gap": "12px"},
+                                            children=[
+                                                html.Div(id="summary_year", style={"fontSize": "18px"}),
+                                                html.Div(["Selected Area: ", html.Span(id="summary_area", style={"fontWeight": "bold"})]),
+                                                html.Div(["Total Incidents: ", html.Span(id="summary_total", style={"fontWeight": "bold", "fontSize": "24px"})]),
+                                                html.Div(["Peak Hour: ", html.Span(id="summary_peak", style={"fontWeight": "bold"})]),
+                                                html.Div(["Top Crime Type: ", html.Span(id="summary_top_type", style={"fontWeight": "bold"})]),
+                                            ],
+                                        ),
                                     ],
                                 ),
                                 html.Div(
                                     style={
-                                        "flex": "1",
+                                        "flex": "1 1 auto",
                                         "backgroundColor": "white",
                                         "padding": "10px",
                                         "borderRadius": "10px",
@@ -807,7 +890,7 @@ app.layout = html.Div(
                                 "display": "flex",
                                 "flexDirection": "column",
                                 "gap": "8px",
-                                "height": "58%",
+                                "height": "57%",
                                 "overflow": "hidden",
                             },
                             children=[
