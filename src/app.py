@@ -514,8 +514,14 @@ def fig_yearly_trend(df_all: pd.DataFrame, types_selected, tod_selected, selecte
         category_orders={"CRIME_GROUP": ["Violent", "Theft", "Non-violent"]},
         color_discrete_map=GROUP_COLORS,
     )
+
+    fig.update_layout(
+        margin=dict(l=10, r=10, t=10, b=36),
+        height=300,
+        legend_title_text="Crime Type"
+    )
     fig.update_layout(margin=dict(l=10, r=10, t=10, b=36), height=300)
-    fig.update_yaxes(title="# incidents")
+    fig.update_yaxes(title="# Incidents")
     fig.update_xaxes(title="Year", dtick=1)
     return fig
 
@@ -878,7 +884,7 @@ app.layout = html.Div(
                                         "overflow": "hidden",
                                     },
                                     children=[
-                                        html.H4("INCIDENT SUMMARY", style={"margin": "0 0 8px 0"}),
+                                        html.H4("Incident Summary", style={"margin": "0 0 8px 0"}),
                                         html.Div(
                                             style={"display": "flex", "flexDirection": "column", "gap": "12px"},
                                             children=[
