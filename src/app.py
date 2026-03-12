@@ -365,7 +365,7 @@ def fig_monthly(df_focus: pd.DataFrame):
     fig.update_layout(
         barmode="stack",
         margin=dict(l=10,r=10,t=40,b=10),
-        height=300
+        autosize=True
     )
 
     fig.update_yaxes(title="# Incidents")
@@ -402,7 +402,7 @@ def fig_hourly(df_focus: pd.DataFrame):
     fig.update_layout(
         barmode="stack",
         margin=dict(l=10,r=10,t=40,b=10),
-        height=300
+        autosize=True
     )
 
     fig.update_xaxes(title="Hour of Day", range=[-0.5,23.5], dtick=1)
@@ -435,7 +435,7 @@ def fig_type_comparison(df_focus: pd.DataFrame):
 
     fig.update_layout(
         margin=dict(l=10,r=10,t=40,b=10),
-        height=300
+        autosize=True
     )
 
     fig.update_xaxes(title="")
@@ -482,7 +482,7 @@ def fig_monthly_pct_change(df_focus: pd.DataFrame, selected_neigh: str | None):
 
     fig.update_layout(
         margin=dict(l=10,r=10,t=40,b=10),
-        height=400
+        autosize=True
     )
 
     fig.update_yaxes(title="% Change", tickformat=".0%")
@@ -516,13 +516,12 @@ def fig_yearly_trend(df_all: pd.DataFrame, types_selected, tod_selected, selecte
     )
 
     fig.update_layout(
-        margin=dict(l=10, r=10, t=10, b=36),
-        height=300,
+        margin=dict(l=10, r=10, t=10, b=52),
+        autosize=True,
         legend_title_text="Crime Type"
     )
-    fig.update_layout(margin=dict(l=10, r=10, t=10, b=36), height=300)
     fig.update_yaxes(title="# Incidents")
-    fig.update_xaxes(title="Year", dtick=1)
+    fig.update_xaxes(title="Year", dtick=1, title_standoff=8)
     return fig
 
 # -----------------------------
@@ -572,10 +571,10 @@ def fig_neighbourhood_map(
             df_points,
             lat="lat",
             lon="lon",
-            color="TYPE",
-            color_discrete_map=TYPE_COLORS,
+            color="CRIME_GROUP",
+            color_discrete_map=GROUP_COLORS,
+            category_orders={"CRIME_GROUP": ["Violent", "Theft", "Non-violent"]},
             labels={
-                "TYPE": "Crime Type",
                 "CRIME_GROUP": "Crime Category",
                 "lat": "Latitude",
                 "lon": "Longitude"
@@ -600,7 +599,7 @@ def fig_neighbourhood_map(
                 center=map_center,
                 mapbox_style="open-street-map",
                 title=f"Incidents in {selected_neigh}",
-                height=470,
+                height=450,
                 )
 
         # neighbourhood boundary line
@@ -650,7 +649,7 @@ def fig_neighbourhood_map(
             "NEIGH_GEO": "Neighbourhood"
         },
         title="Incidents by Neighbourhood (Click a Polygon to Zoom & See Points)",
-        height=500,
+        height=470,
     )
 
     fig.update_layout(
@@ -721,6 +720,33 @@ PLOT_BTN_ACTIVE_STYLE = {
 app = Dash(__name__, title="Vancouver Crime Patterns Dashboard")
 server = app.server
 
+app.index_string = """
+<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <style>
+            html, body, #react-entry-point {
+                height: 100%;
+                margin: 0;
+                overflow: hidden;
+            }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+"""
+
 app.layout = html.Div(
     style={
         "fontFamily": "Arial",
@@ -735,7 +761,7 @@ app.layout = html.Div(
         dcc.Store(id="selected_plot_store", data="monthly"),
         html.H2("Vancouver Crime Patterns Dashboard", style={"textAlign": "center", "margin": "6px 0"}),
         html.Div(
-            style={"display": "flex", "gap": "10px", "height": "calc(100vh - 56px)", "overflow": "hidden"},
+            style={"display": "flex", "gap": "10px", "height": "calc(100vh - 60px)", "overflow": "hidden"},
             children=[
                 html.Div(
                     style={
@@ -855,7 +881,7 @@ app.layout = html.Div(
                                         name_mapping=name_mapping,
                                         selected_neigh=None,
                                     ),
-                                    style={"height": "500px", "width": "100%"},
+                                    style={"height": "470px", "width": "100%"},
                                     config={"displayModeBar": True, "responsive": True},
                                 ),
                             ],
@@ -900,6 +926,8 @@ app.layout = html.Div(
                                 html.Div(
                                     style={
                                         "flex": "1 1 auto",
+                                        "display": "flex",
+                                        "flexDirection": "column",
                                         "backgroundColor": "white",
                                         "padding": "10px",
                                         "borderRadius": "10px",
@@ -907,7 +935,11 @@ app.layout = html.Div(
                                     },
                                     children=[
                                         html.H4("Yearly Trend", style={"margin": "0 0 8px 0"}),
-                                        dcc.Graph(id="yearly_trend_graph", config={"displayModeBar": False}, style={"height": "100%"}),
+                                        dcc.Graph(
+                                            id="yearly_trend_graph",
+                                            config={"displayModeBar": False, "responsive": True},
+                                            style={"flex": "1 1 auto", "minHeight": "0", "width": "100%"},
+                                        ),
                                     ],
                                 ),
                             ],
@@ -933,7 +965,11 @@ app.layout = html.Div(
                                         html.Button("Volatility", id="plot_btn_volatility", n_clicks=0, style=PLOT_BTN_BASE_STYLE),
                                     ],
                                 ),
-                                dcc.Graph(id="main_plot_graph", config={"displayModeBar": False}, style={"height": "100%", "width": "100%"}),
+                                dcc.Graph(
+                                    id="main_plot_graph",
+                                    config={"displayModeBar": False, "responsive": True},
+                                    style={"flex": "1 1 auto", "minHeight": "0", "width": "100%"},
+                                ),
                             ],
                         ),
                     ],
@@ -1059,13 +1095,13 @@ def update_dashboard(year, types_selected, tod_selected, selected_neigh, selecte
         t_fig = fig_type_comparison(df_focus)
         p_fig = fig_monthly_pct_change(df_focus, selected_neigh)
     else:
-        m_fig = px.bar(title="Monthly Trend (# Incidents)"); m_fig.update_layout(height=260)
-        h_fig = px.bar(title="Hourly Distribution (# Incidents)"); h_fig.update_layout(height=260)
-        t_fig = px.bar(title="Crime Type Comparison (Top 8)"); t_fig.update_layout(height=260)
-        p_fig = px.line(title="Monthly Percent Change Volatility (Top 8 Neighbourhoods)"); p_fig.update_layout(height=260)
+        m_fig = px.bar(title="Monthly Trend (# Incidents)")
+        h_fig = px.bar(title="Hourly Distribution (# Incidents)")
+        t_fig = px.bar(title="Crime Type Comparison (Top 8)")
+        p_fig = px.line(title="Monthly Percent Change Volatility (Top 8 Neighbourhoods)")
 
     for fig in [m_fig, h_fig, t_fig, p_fig]:
-        fig.update_layout(height=260, margin=dict(l=10, r=10, t=40, b=10))
+        fig.update_layout(autosize=True, margin=dict(l=10, r=10, t=40, b=10))
 
     if selected_plot == "hourly":
         main_fig = h_fig
