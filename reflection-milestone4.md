@@ -36,7 +36,9 @@ These changes improved both **chart readability** and **dashboard stability**.
 
 One piece of feedback suggested color-coding the **"Hour of Day"** visualization into broader time categories (such as morning, afternoon, evening, and night).
 
-While we carefully considered this suggestion, we ultimately chose to keep the **hourly distribution chart**. The finer hourly resolution provides more detailed insights into crime patterns and better aligns with the analytical objectives of our dashboard.
+While we carefully considered this suggestion, we ultimately chose to keep the **hourly distribution chart**. The finer hourly resolution provides more detailed insights into crime patterns and better aligns with the analytical objectives of our dashboard. We did change the bar graphs to stacked bar graphs with color to compensate instead.
+
+Some other feedback stated the poor performance of the map. We tried to optimize the dataset for use but did not see any improvements on the website, and running locally the map did not perform poorly, so we set it aside as simply the technological limitations of the free Render account we were using.
 
 ---
 
